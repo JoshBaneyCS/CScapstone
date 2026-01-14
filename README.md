@@ -21,7 +21,8 @@
 | Frontend    | *TBD*            |
 | Backend     | *TBD*            |
 | Database    | *TBD*            |
-| Deployment  | ArgoCD, GitHub Actions, Grafana/Prometheus. Kubernetes hosted on Prem, Block and S3-like storage. ARM64 Container registry within Kubernetes            |
+| Infrastructure    | Cloud Native, but self hosted Kubernetes. Cloudflare, Traefik or HAProxy          |
+| Deployment  | ArgoCD, GitHub Actions, Grafana/Prometheus. Kubernetes hosted on Prem, Block and S3-like storage. ARM64 Container registry within Kubernetes. Seperate Dev, Staging, and Prod Enviorments. Blue-Green Deployment using tags in GitHub.          |
 
 ## Getting Started
 
