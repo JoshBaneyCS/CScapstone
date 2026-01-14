@@ -21,7 +21,7 @@
 | Frontend    | *TBD*            |
 | Backend     | *TBD*            |
 | Database    | *TBD*            |
-| Deployment  | *TBD*            |
+| Deployment  | ArgoCD, GitHub Actions, Grafana/Prometheus. Kubernetes hosted on Prem, Block and S3-like storage. ARM64 Container registry within Kubernetes            |
 
 ## Getting Started
 
@@ -79,12 +79,12 @@ cd your-repo
 
 | Milestone | Target Date | Status |
 |-----------|-------------|--------|
-| Project Proposal | *TBD* | 🔲 Not Started |
-| Requirements Complete | *TBD* | 🔲 Not Started |
-| Design Complete | *TBD* | 🔲 Not Started |
-| Implementation | *TBD* | 🔲 Not Started |
-| Testing | *TBD* | 🔲 Not Started |
-| Final Presentation | *TBD* | 🔲 Not Started |
+| Project Proposal | 1/20/26 | 👷 In progress |
+| Requirements Complete | 1/20/26 | 🔲 Not Started |
+| Design Complete | 2/3/26 | 🔲 Not Started |
+| Implementation | 2/10/26 | 🔲 Not Started |
+| Testing | 2/10/26 | 🔲 Not Started |
+| Final Presentation | 3/3/26 | 🔲 Not Started |
 
 ## License
 
