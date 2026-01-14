@@ -60,7 +60,7 @@ cd your-repo
 | Name | Role | Contact |
 |------|------|---------|
 | Josh | DevOps / SRE, Backend | [Email](mailto:joshnbaney@gmail.com) [Phone] (410-946-4226) |
-| Member 2 | *Role* | [Email](mailto:) |
+| Jerry | Backend | [Email](mailto:gardinjb@hotmail.com) [Phone] (607-661-6313) |
 | Member 3 | *Role* | [Email](mailto:) |
 | Member 4 | *Role* | [Email](mailto:) |
 
