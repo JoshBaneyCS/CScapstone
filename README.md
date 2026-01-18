@@ -62,7 +62,7 @@ cd your-repo
 |------|------|---------|
 | Josh | DevOps / SRE, Backend | [Email](mailto:joshnbaney@gmail.com) [Phone] (410-946-4226) |
 | Jerry | Backend | [Email](mailto:gardinjb@hotmail.com) [Phone] (607-661-6313) |
-| Member 3 | *Role* | [Email](mailto:) |
+| David | *Role* | [Email](mailto:atreusion@gmail.com) [Phone] (443-538-5585) |
 | Member 4 | *Role* | [Email](mailto:) |
 
 ### Responsibilities
