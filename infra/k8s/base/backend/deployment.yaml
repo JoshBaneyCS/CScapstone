@@ -1,0 +1,400 @@
+# =============================================================================
+# DEPLOYMENT.YAML - BACKEND API DEPLOYMENT
+# =============================================================================
+# A Deployment manages a set of identical pods, ensuring the desired number
+# of replicas are running at all times. It handles:
+#   - Rolling updates (zero-downtime deployments)
+#   - Rollbacks (revert to previous versions)
+#   - Scaling (increase/decrease replicas)
+#   - Self-healing (restart failed pods)
+#
+# Deployment vs StatefulSet:
+# --------------------------
+#   Deployment: Stateless apps (APIs, web servers) - pods are interchangeable
+#   StatefulSet: Stateful apps (databases) - pods have stable identities
+#
+# The backend API is stateless (all state is in PostgreSQL), so Deployment
+# is the right choice.
+#
+# Commands:
+#   kubectl apply -f deployment.yaml -n casino
+#   kubectl get deployment -n casino
+#   kubectl get pods -l app=backend -n casino
+#   kubectl logs -f deployment/backend -n casino
+#   kubectl rollout status deployment/backend -n casino
+#   kubectl rollout undo deployment/backend -n casino   # Rollback
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: casino-capstone
+  annotations:
+    description: "Go REST API backend for Casino Capstone"
+spec:
+  # Number of pod replicas
+  # Start with 2 for high availability
+  replicas: 2
+  
+  # Selector must match template labels
+  selector:
+    matchLabels:
+      app: backend
+      app.kubernetes.io/name: backend
+  
+  # Deployment strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Maximum pods that can be unavailable during update
+      maxUnavailable: 1
+      # Maximum pods that can be created above desired replicas
+      maxSurge: 1
+  
+  # Minimum seconds a pod must be ready before considered available
+  minReadySeconds: 5
+  
+  # Number of old ReplicaSets to retain for rollback
+  revisionHistoryLimit: 10
+  
+  # Pod template
+  template:
+    metadata:
+      labels:
+        app: backend
+        app.kubernetes.io/name: backend
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: casino-capstone
+      annotations:
+        # Force redeployment when ConfigMap changes
+        # Update this value or use a hash of the ConfigMap
+        checksum/config: "changeme"
+        
+        # Prometheus metrics
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      # Service account (create one if needed for specific permissions)
+      # serviceAccountName: backend-sa
+      
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      # Wait for PostgreSQL to be ready before starting
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL to be ready..."
+              until nc -z postgres 5432; do
+                echo "PostgreSQL is not ready - sleeping"
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+      
+      containers:
+        - name: backend
+          # Image - replace with your actual image
+          # For local development: build and load into your cluster
+          # For production: use your container registry
+          image: casino-backend:latest
+          
+          # Image pull policy
+          # Always: Always pull (good for :latest tags)
+          # IfNotPresent: Pull only if not cached (good for versioned tags)
+          imagePullPolicy: IfNotPresent
+          
+          # Container ports
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          
+          # Environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          
+          # Environment variables from Secrets
+          env:
+            # Database URL from secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: database-url
+            
+            # JWT secret from secret
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+            
+            # Pod name (useful for logging)
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            
+            # Pod namespace
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            
+            # Pod IP
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          
+          # Resource limits and requests
+          resources:
+            requests:
+              cpu: "100m"       # 0.1 CPU cores
+              memory: "128Mi"   # 128 MB RAM
+            limits:
+              cpu: "500m"       # 0.5 CPU cores
+              memory: "512Mi"   # 512 MB RAM
+          
+          # Liveness probe - is the container alive?
+          # If this fails, Kubernetes restarts the container
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          # Readiness probe - is the container ready to serve traffic?
+          # If this fails, pod is removed from service endpoints
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Startup probe - for slow-starting containers
+          # Prevents liveness probe from killing container during startup
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30  # 30 * 5s = 150s max startup time
+          
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          
+          # Volume mounts (if needed)
+          volumeMounts:
+            # Temporary directory for the app (if needed)
+            - name: tmp
+              mountPath: /tmp
+      
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      
+      # Restart policy (Always for Deployments)
+      restartPolicy: Always
+      
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+      
+      # DNS policy
+      dnsPolicy: ClusterFirst
+      
+      # Node selector (optional - schedule on specific nodes)
+      # nodeSelector:
+      #   kubernetes.io/os: linux
+      
+      # Tolerations (optional - allow scheduling on tainted nodes)
+      # tolerations:
+      #   - key: "dedicated"
+      #     operator: "Equal"
+      #     value: "backend"
+      #     effect: "NoSchedule"
+      
+      # Affinity rules (optional)
+      affinity:
+        # Pod anti-affinity - spread pods across nodes for HA
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: backend
+                topologyKey: kubernetes.io/hostname
+
+---
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER (Optional)
+# =============================================================================
+# Automatically scale the number of pods based on CPU/memory usage.
+# Requires metrics-server to be installed in the cluster.
+#
+# Install metrics-server:
+#   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  
+  # Scaling limits
+  minReplicas: 2
+  maxReplicas: 10
+  
+  # Scaling metrics
+  metrics:
+    # Scale based on CPU usage
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Scale up when CPU > 70%
+    
+    # Scale based on memory usage
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80  # Scale up when memory > 80%
+  
+  # Scaling behavior
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+
+---
+# =============================================================================
+# POD DISRUPTION BUDGET (Optional)
+# =============================================================================
+# Ensures a minimum number of pods are always available during
+# voluntary disruptions (node drains, cluster upgrades, etc.)
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: backend
+spec:
+  # Minimum pods that must be available
+  minAvailable: 1
+  
+  # Or use maxUnavailable instead:
+  # maxUnavailable: 1
+  
+  selector:
+    matchLabels:
+      app: backend
+
+---
+# =============================================================================
+# DEPLOYMENT NOTES
+# =============================================================================
+#
+# Building the Docker image:
+# --------------------------
+# cd backend
+# docker build -t casino-backend:latest .
+#
+# For minikube:
+#   eval $(minikube docker-env)
+#   docker build -t casino-backend:latest .
+#
+# For kind:
+#   docker build -t casino-backend:latest .
+#   kind load docker-image casino-backend:latest
+#
+#
+# Scaling manually:
+# -----------------
+# kubectl scale deployment backend --replicas=5 -n casino
+#
+#
+# Rolling update:
+# ---------------
+# kubectl set image deployment/backend backend=casino-backend:v2 -n casino
+#
+#
+# Rollback:
+# ---------
+# kubectl rollout undo deployment/backend -n casino
+# kubectl rollout undo deployment/backend --to-revision=2 -n casino
+#
+#
+# View rollout history:
+# ---------------------
+# kubectl rollout history deployment/backend -n casino
+#
+#
+# Debug a pod:
+# ------------
+# kubectl exec -it deployment/backend -n casino -- /bin/sh
+# kubectl logs deployment/backend -n casino --follow
+#
+# =============================================================================

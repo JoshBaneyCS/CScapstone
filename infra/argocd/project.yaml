@@ -1,0 +1,391 @@
+# =============================================================================
+# PROJECT.YAML - ARGOCD PROJECT FOR CASINO CAPSTONE
+# =============================================================================
+# An ArgoCD Project provides a logical grouping for Applications and defines:
+#   - Which Git repositories can be used as sources
+#   - Which clusters/namespaces can be deployment targets
+#   - Which Kubernetes resources can be deployed
+#   - Role-based access control (RBAC) for team members
+#
+# Why Use Projects?
+# -----------------
+#   1. Security: Restrict what teams can deploy and where
+#   2. Multi-tenancy: Isolate different teams/applications
+#   3. Governance: Control allowed resources and destinations
+#   4. Audit: Track who can do what
+#
+# The 'default' project has no restrictions. Creating a custom project
+# allows you to enforce security boundaries.
+#
+# Commands:
+#   kubectl apply -f project.yaml -n argocd
+#   argocd proj list
+#   argocd proj get casino-project
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: casino-project
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: casino-project
+    app.kubernetes.io/part-of: casino-capstone
+    team: cs-capstone
+  annotations:
+    description: "ArgoCD project for Casino Capstone application"
+  # Finalizer prevents accidental deletion while applications exist
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  # ===========================================================================
+  # DESCRIPTION
+  # ===========================================================================
+  description: "Casino Capstone CS Project - Full-stack casino application"
+
+  # ===========================================================================
+  # SOURCE REPOSITORIES
+  # ===========================================================================
+  # Only these Git repositories can be used as application sources
+  # Restricts where manifests can come from
+  
+  sourceRepos:
+    # Main project repository
+    - https://github.com/JoshBaneyCS/CScapstone.git
+    
+    # Allow SSH URL as well
+    - git@github.com:JoshBaneyCS/CScapstone.git
+    
+    # Helm chart repositories (if needed)
+    # - https://charts.bitnami.com/bitnami
+    # - https://prometheus-community.github.io/helm-charts
+
+  # ===========================================================================
+  # DESTINATION CLUSTERS AND NAMESPACES
+  # ===========================================================================
+  # Only these cluster/namespace combinations are allowed as targets
+  # Prevents accidental deployment to wrong namespaces
+  
+  destinations:
+    # Production namespace
+    - namespace: casino
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    
+    # Development namespace (if using separate namespace)
+    - namespace: casino-dev
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    
+    # Staging namespace (future)
+    - namespace: casino-staging
+      server: https://kubernetes.default.svc
+      name: in-cluster
+
+  # ===========================================================================
+  # CLUSTER RESOURCE WHITELIST
+  # ===========================================================================
+  # Cluster-scoped resources that Applications in this project can manage
+  # By default, no cluster resources are allowed
+  
+  clusterResourceWhitelist:
+    # Allow Namespace creation
+    - group: ""
+      kind: Namespace
+    
+    # Allow ClusterRole and ClusterRoleBinding (if needed)
+    # - group: rbac.authorization.k8s.io
+    #   kind: ClusterRole
+    # - group: rbac.authorization.k8s.io
+    #   kind: ClusterRoleBinding
+    
+    # Allow IngressClass
+    - group: networking.k8s.io
+      kind: IngressClass
+    
+    # Allow PersistentVolume (if not using dynamic provisioning)
+    # - group: ""
+    #   kind: PersistentVolume
+
+  # ===========================================================================
+  # CLUSTER RESOURCE BLACKLIST
+  # ===========================================================================
+  # Explicitly deny certain cluster resources (even if whitelisted above)
+  # More specific than whitelist
+  
+  clusterResourceBlacklist: []
+  # Example:
+  # - group: ""
+  #   kind: ResourceQuota
+
+  # ===========================================================================
+  # NAMESPACE RESOURCE WHITELIST
+  # ===========================================================================
+  # Namespace-scoped resources that can be deployed
+  # Empty list = all resources allowed (default)
+  
+  namespaceResourceWhitelist:
+    # Core resources
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: ""
+      kind: Pod
+    
+    # Apps resources
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: ReplicaSet
+    - group: apps
+      kind: DaemonSet
+    
+    # Batch resources
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+    
+    # Networking resources
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    
+    # Autoscaling resources
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    
+    # Policy resources
+    - group: policy
+      kind: PodDisruptionBudget
+    
+    # RBAC resources (namespace-scoped)
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+
+  # ===========================================================================
+  # NAMESPACE RESOURCE BLACKLIST
+  # ===========================================================================
+  # Explicitly deny certain namespace resources
+  
+  namespaceResourceBlacklist: []
+  # Example - prevent LimitRange modification:
+  # - group: ""
+  #   kind: LimitRange
+
+  # ===========================================================================
+  # ORPHANED RESOURCES
+  # ===========================================================================
+  # What to do with resources that exist in the cluster but not in Git
+  
+  orphanedResources:
+    # Warn about orphaned resources (show in UI)
+    warn: true
+    
+    # Ignore certain resources that are managed externally
+    ignore:
+      # Ignore Endpoints (auto-created for Services)
+      - group: ""
+        kind: Endpoints
+      # Ignore EndpointSlices
+      - group: discovery.k8s.io
+        kind: EndpointSlice
+      # Ignore ReplicaSets (managed by Deployments)
+      - group: apps
+        kind: ReplicaSet
+      # Ignore Pods (managed by Deployments/StatefulSets)
+      - group: ""
+        kind: Pod
+
+  # ===========================================================================
+  # ROLES - PROJECT-LEVEL RBAC
+  # ===========================================================================
+  # Define roles for team members
+  # These work with ArgoCD's RBAC, not Kubernetes RBAC
+  
+  roles:
+    # Admin role - full access
+    - name: project-admin
+      description: "Full access to casino project"
+      policies:
+        # p, <role>, <resource>, <action>, <project>/<object>, <allow/deny>
+        - p, proj:casino-project:project-admin, applications, *, casino-project/*, allow
+        - p, proj:casino-project:project-admin, repositories, *, casino-project/*, allow
+        - p, proj:casino-project:project-admin, logs, get, casino-project/*, allow
+        - p, proj:casino-project:project-admin, exec, create, casino-project/*, allow
+      groups:
+        # Map to SSO groups or local ArgoCD groups
+        - casino-admins
+    
+    # Developer role - can sync and view, but not delete
+    - name: developer
+      description: "Developer access - sync and view"
+      policies:
+        - p, proj:casino-project:developer, applications, get, casino-project/*, allow
+        - p, proj:casino-project:developer, applications, sync, casino-project/*, allow
+        - p, proj:casino-project:developer, logs, get, casino-project/*, allow
+        # Deny delete
+        - p, proj:casino-project:developer, applications, delete, casino-project/*, deny
+      groups:
+        - casino-developers
+        - cs-capstone-team
+    
+    # Read-only role - view only
+    - name: viewer
+      description: "Read-only access"
+      policies:
+        - p, proj:casino-project:viewer, applications, get, casino-project/*, allow
+        - p, proj:casino-project:viewer, logs, get, casino-project/*, allow
+      groups:
+        - casino-viewers
+        - professors
+
+  # ===========================================================================
+  # SYNC WINDOWS
+  # ===========================================================================
+  # Control when syncs can happen
+  # Useful for preventing deployments during peak hours
+  
+  syncWindows:
+    # Allow syncs during business hours (for dev)
+    - kind: allow
+      schedule: "0 9-17 * * 1-5"  # 9 AM - 5 PM, Mon-Fri
+      duration: 8h
+      applications:
+        - casino-capstone-dev
+      namespaces:
+        - casino-dev
+      clusters:
+        - in-cluster
+      manualSync: true  # Allow manual syncs even outside window
+    
+    # Deny syncs on weekends for production
+    - kind: deny
+      schedule: "0 0 * * 0,6"  # Midnight on Sat/Sun
+      duration: 48h
+      applications:
+        - casino-capstone
+      namespaces:
+        - casino
+      clusters:
+        - in-cluster
+      manualSync: true  # Still allow manual syncs with approval
+
+  # ===========================================================================
+  # SIGNATURE KEYS (Optional)
+  # ===========================================================================
+  # Require commits to be signed with specific GPG keys
+  # Enhances security by verifying commit authors
+  
+  # signatureKeys:
+  #   - keyID: ABC123DEF456
+
+  # ===========================================================================
+  # SOURCE NAMESPACES (ArgoCD 2.5+)
+  # ===========================================================================
+  # Allow Applications to be created in namespaces other than argocd
+  
+  sourceNamespaces:
+    - argocd
+    - casino
+
+---
+# =============================================================================
+# UPDATE APPLICATIONS TO USE THIS PROJECT
+# =============================================================================
+# After creating this project, update your Applications to use it:
+#
+# spec:
+#   project: casino-project  # Changed from 'default'
+#
+# =============================================================================
+
+---
+# =============================================================================
+# ARGOCD RBAC CONFIGMAP (Optional)
+# =============================================================================
+# For more complex RBAC, you can configure ArgoCD's rbac-cm ConfigMap.
+# This is useful for SSO integration and fine-grained permissions.
+#
+# kubectl edit configmap argocd-rbac-cm -n argocd
+# =============================================================================
+
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: argocd-rbac-cm
+#   namespace: argocd
+# data:
+#   # Default policy for authenticated users
+#   policy.default: role:readonly
+#   
+#   # CSV policy rules
+#   policy.csv: |
+#     # Project admins
+#     g, casino-admins, proj:casino-project:project-admin
+#     
+#     # Developers
+#     g, casino-developers, proj:casino-project:developer
+#     g, cs-capstone-team, proj:casino-project:developer
+#     
+#     # Viewers
+#     g, professors, proj:casino-project:viewer
+#     
+#     # Built-in admin gets everything
+#     g, admin, role:admin
+
+---
+# =============================================================================
+# PROJECT USAGE NOTES
+# =============================================================================
+#
+# Apply the project:
+# ------------------
+# kubectl apply -f project.yaml -n argocd
+#
+#
+# Update Applications to use this project:
+# ----------------------------------------
+# Change `project: default` to `project: casino-project` in application.yaml
+#
+#
+# CLI Commands:
+# -------------
+# argocd proj list                           # List all projects
+# argocd proj get casino-project             # Get project details
+# argocd proj role list casino-project       # List roles in project
+# argocd proj windows list casino-project    # List sync windows
+#
+#
+# Add user to a role:
+# -------------------
+# argocd proj role add-group casino-project developer <username>
+#
+#
+# Test permissions:
+# -----------------
+# argocd account can-i sync applications casino-project/casino-capstone
+# argocd account can-i delete applications casino-project/casino-capstone
+#
+#
+# Troubleshooting RBAC:
+# ---------------------
+# 1. Check ArgoCD logs for permission errors
+# 2. Verify user is in the correct group
+# 3. Check project role policies
+# 4. Ensure SSO groups are correctly mapped
+#
+# =============================================================================

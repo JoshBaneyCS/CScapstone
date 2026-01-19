@@ -1,0 +1,145 @@
+# =============================================================================
+# SERVICE.YAML - BACKEND API SERVICE
+# =============================================================================
+# A Service provides a stable network endpoint for accessing the backend API.
+# Since we have multiple backend pods (replicas), the service also load
+# balances traffic across them.
+#
+# Traffic Flow:
+# -------------
+#   User → Ingress → Backend Service → Backend Pods (load balanced)
+#                                    ↓
+#                              PostgreSQL
+#
+# Service Types for the Backend:
+# ------------------------------
+#   - ClusterIP: Internal access only (Ingress routes external traffic)
+#   - NodePort: Expose on node IPs (useful for debugging)
+#   - LoadBalancer: Provision external LB (expensive, usually use Ingress)
+#
+# We use ClusterIP because the Ingress controller handles external access.
+#
+# Commands:
+#   kubectl apply -f service.yaml -n casino
+#   kubectl get svc -n casino
+#   kubectl describe svc backend -n casino
+#   kubectl port-forward svc/backend 8080:8080 -n casino
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: casino-capstone
+  annotations:
+    description: "Backend API service for Casino Capstone"
+    # Prometheus service discovery
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  # Service type - ClusterIP for internal access
+  # External access is handled by Ingress
+  type: ClusterIP
+  
+  # Selector - which pods this service routes traffic to
+  selector:
+    app: backend
+    app.kubernetes.io/name: backend
+  
+  # Ports configuration
+  ports:
+    - name: http
+      port: 8080          # Port the service listens on
+      targetPort: http    # Named port on the pod (or use 8080)
+      protocol: TCP
+  
+  # Session affinity
+  # None: Load balance across all pods (default, recommended for stateless APIs)
+  # ClientIP: Stick to the same pod for a client IP
+  sessionAffinity: None
+
+---
+# =============================================================================
+# OPTIONAL: NODEPORT SERVICE FOR DEBUGGING
+# =============================================================================
+# Use this to access the API directly on a node port without Ingress.
+# Useful for debugging or local development without an Ingress controller.
+#
+# Access: http://<node-ip>:<nodePort>
+# For minikube: minikube service backend-nodeport -n casino
+# =============================================================================
+
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: backend-nodeport
+#   namespace: casino
+#   labels:
+#     app.kubernetes.io/name: backend
+#     app.kubernetes.io/component: api
+# spec:
+#   type: NodePort
+#   selector:
+#     app: backend
+#   ports:
+#     - name: http
+#       port: 8080
+#       targetPort: 8080
+#       nodePort: 30080  # Fixed port (30000-32767 range)
+#       protocol: TCP
+
+---
+# =============================================================================
+# SERVICE ENDPOINTS EXPLAINED
+# =============================================================================
+#
+# DNS Names (within the cluster):
+# -------------------------------
+#   backend                               (same namespace)
+#   backend.casino                        (from other namespaces)
+#   backend.casino.svc.cluster.local      (fully qualified)
+#
+#
+# How Load Balancing Works:
+# -------------------------
+# When multiple pods match the selector, Kubernetes automatically
+# distributes traffic across them using round-robin (by default).
+#
+#   Request 1 → backend-7f8b9c-abc (Pod 1)
+#   Request 2 → backend-7f8b9c-xyz (Pod 2)
+#   Request 3 → backend-7f8b9c-abc (Pod 1)
+#   ...
+#
+#
+# Service Discovery:
+# ------------------
+# Other pods can discover this service via:
+#   1. DNS: backend.casino.svc.cluster.local
+#   2. Environment variables: BACKEND_SERVICE_HOST, BACKEND_SERVICE_PORT
+#
+#
+# Testing the Service:
+# --------------------
+# From within a pod:
+#   curl http://backend:8080/health
+#
+# Port forward to local machine:
+#   kubectl port-forward svc/backend 8080:8080 -n casino
+#   curl http://localhost:8080/health
+#
+# Using kubectl proxy:
+#   kubectl proxy
+#   curl http://localhost:8001/api/v1/namespaces/casino/services/backend:8080/proxy/health
+#
+#
+# Viewing Service Endpoints:
+# --------------------------
+# kubectl get endpoints backend -n casino
+# # Shows the IP addresses of all pods backing this service
+#
+# =============================================================================

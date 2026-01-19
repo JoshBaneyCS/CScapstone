@@ -1,0 +1,134 @@
+# =============================================================================
+# NAMESPACE.YAML - KUBERNETES NAMESPACE FOR CASINO CAPSTONE
+# =============================================================================
+# A Namespace in Kubernetes provides a way to divide cluster resources between
+# multiple users, teams, or projects. It's like a virtual cluster within a cluster.
+#
+# Why use a dedicated namespace?
+#   1. Isolation: Resources are separated from other applications
+#   2. Access Control: RBAC policies can be applied per-namespace
+#   3. Resource Quotas: Limit CPU/memory usage per namespace
+#   4. Organization: Easy to see all casino-related resources together
+#   5. Cleanup: Delete namespace = delete all resources in it
+#
+# All casino resources should use: -n casino or namespace: casino
+#
+# Commands:
+#   kubectl apply -f namespace.yaml     # Create namespace
+#   kubectl get all -n casino           # List all resources
+#   kubectl delete namespace casino     # Delete everything (careful!)
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  # Name of the namespace - all resources will reference this
+  name: casino
+  
+  # Labels help organize and select resources
+  labels:
+    # Standard Kubernetes labels
+    app.kubernetes.io/name: casino-capstone
+    app.kubernetes.io/part-of: casino-capstone
+    app.kubernetes.io/managed-by: kustomize
+    
+    # Custom labels for our project
+    project: casino-capstone
+    team: cs-capstone
+    
+  # Annotations provide additional metadata
+  annotations:
+    # Description for documentation
+    description: "Casino Capstone application namespace - contains all casino services"
+    
+    # Contact information
+    owner: "CS Capstone Team"
+    
+    # Environment (can be overridden in overlays)
+    environment: "development"
+
+---
+# =============================================================================
+# RESOURCE QUOTA (Optional but recommended)
+# =============================================================================
+# Limits the total resources that can be consumed in this namespace.
+# Prevents runaway containers from consuming all cluster resources.
+#
+# Adjust these values based on your cluster capacity.
+# =============================================================================
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: casino-quota
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: casino-capstone
+spec:
+  hard:
+    # Pod limits
+    pods: "20"                          # Maximum number of pods
+    
+    # CPU limits (in cores)
+    requests.cpu: "4"                   # Total CPU requests
+    limits.cpu: "8"                     # Total CPU limits
+    
+    # Memory limits
+    requests.memory: "4Gi"              # Total memory requests
+    limits.memory: "8Gi"                # Total memory limits
+    
+    # Storage limits
+    requests.storage: "50Gi"            # Total PVC storage requests
+    persistentvolumeclaims: "5"         # Maximum number of PVCs
+    
+    # Service limits
+    services: "10"                      # Maximum services
+    services.loadbalancers: "2"         # Maximum LoadBalancer services
+    services.nodeports: "5"             # Maximum NodePort services
+    
+    # Config limits
+    configmaps: "20"                    # Maximum ConfigMaps
+    secrets: "20"                       # Maximum Secrets
+
+---
+# =============================================================================
+# LIMIT RANGE (Optional but recommended)
+# =============================================================================
+# Sets default resource requests/limits for containers that don't specify them.
+# Ensures all containers have resource constraints.
+# =============================================================================
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: casino-limits
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: casino-capstone
+spec:
+  limits:
+    # Default limits for containers
+    - type: Container
+      # Default values if not specified
+      default:
+        cpu: "500m"                     # 0.5 CPU cores
+        memory: "512Mi"                 # 512 MB RAM
+      # Default requests if not specified
+      defaultRequest:
+        cpu: "100m"                     # 0.1 CPU cores
+        memory: "128Mi"                 # 128 MB RAM
+      # Maximum allowed
+      max:
+        cpu: "2"                        # 2 CPU cores max per container
+        memory: "2Gi"                   # 2 GB RAM max per container
+      # Minimum allowed
+      min:
+        cpu: "50m"                      # 0.05 CPU cores min
+        memory: "64Mi"                  # 64 MB RAM min
+    
+    # Limits for PVCs
+    - type: PersistentVolumeClaim
+      max:
+        storage: "50Gi"                 # Maximum PVC size
+      min:
+        storage: "1Gi"                  # Minimum PVC size

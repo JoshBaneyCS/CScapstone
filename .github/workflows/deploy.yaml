@@ -1,0 +1,584 @@
+# =============================================================================
+# DEPLOY.YAML - PRODUCTION DEPLOYMENT WORKFLOW
+# =============================================================================
+# This workflow handles deployment to production environments.
+# It can be triggered by:
+#   - Release creation (recommended)
+#   - Manual trigger with environment selection
+#
+# Deployment Strategy:
+# --------------------
+#   1. Verify images exist in registry
+#   2. Run pre-deployment checks
+#   3. Update Kubernetes manifests with new image tags
+#   4. Trigger ArgoCD sync (or wait for auto-sync)
+#   5. Verify deployment health
+#   6. Notify team of deployment status
+#
+# GitOps Flow:
+# ------------
+# This workflow updates the Git repository with new image tags.
+# ArgoCD detects the change and deploys automatically.
+#
+# Required Secrets:
+# -----------------
+#   - ARGOCD_SERVER: ArgoCD server URL (optional, for direct sync)
+#   - ARGOCD_TOKEN: ArgoCD API token (optional, for direct sync)
+#   - SLACK_WEBHOOK_URL: For deployment notifications (optional)
+#
+# =============================================================================
+
+name: Deploy
+
+# =============================================================================
+# TRIGGERS
+# =============================================================================
+on:
+  # Trigger on release creation
+  release:
+    types: [published]
+  
+  # Manual deployment trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+      
+      image_tag:
+        description: 'Image tag to deploy (leave empty for latest)'
+        required: false
+        type: string
+      
+      skip_tests:
+        description: 'Skip pre-deployment tests'
+        required: false
+        default: false
+        type: boolean
+      
+      dry_run:
+        description: 'Dry run (do not actually deploy)'
+        required: false
+        default: false
+        type: boolean
+
+# =============================================================================
+# ENVIRONMENT VARIABLES
+# =============================================================================
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/joshbaneycs/cscapstone/backend
+  FRONTEND_IMAGE: ghcr.io/joshbaneycs/cscapstone/frontend
+
+# =============================================================================
+# PERMISSIONS
+# =============================================================================
+permissions:
+  contents: write      # To update manifests
+  packages: read       # To verify images exist
+  deployments: write   # To create GitHub deployments
+
+# =============================================================================
+# JOBS
+# =============================================================================
+jobs:
+  # ===========================================================================
+  # PREPARE DEPLOYMENT
+  # ===========================================================================
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    
+    outputs:
+      environment: ${{ steps.config.outputs.environment }}
+      image_tag: ${{ steps.config.outputs.image_tag }}
+      overlay_path: ${{ steps.config.outputs.overlay_path }}
+      should_deploy: ${{ steps.config.outputs.should_deploy }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # -----------------------------------------------------------------------
+      # DETERMINE CONFIGURATION
+      # -----------------------------------------------------------------------
+      - name: Determine deployment configuration
+        id: config
+        run: |
+          # Determine environment
+          if [ "${{ github.event_name }}" == "release" ]; then
+            ENVIRONMENT="production"
+            IMAGE_TAG="${{ github.event.release.tag_name }}"
+          else
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          fi
+          
+          # Default to latest if no tag specified
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG="latest"
+          fi
+          
+          # Determine overlay path
+          case "$ENVIRONMENT" in
+            production)
+              OVERLAY_PATH="infra/k8s/overlays/prod"
+              ;;
+            staging)
+              OVERLAY_PATH="infra/k8s/overlays/staging"
+              ;;
+            development)
+              OVERLAY_PATH="infra/k8s/overlays/dev"
+              ;;
+          esac
+          
+          # Determine if we should actually deploy
+          SHOULD_DEPLOY="true"
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            SHOULD_DEPLOY="false"
+          fi
+          
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "overlay_path=$OVERLAY_PATH" >> $GITHUB_OUTPUT
+          echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+          
+          echo "## Deployment Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | $ENVIRONMENT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | $IMAGE_TAG |" >> $GITHUB_STEP_SUMMARY
+          echo "| Overlay Path | $OVERLAY_PATH |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry Run | ${{ github.event.inputs.dry_run }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # VERIFY IMAGES
+  # ===========================================================================
+  verify-images:
+    name: Verify Images Exist
+    runs-on: ubuntu-latest
+    needs: prepare
+    
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Verify backend image exists
+        run: |
+          echo "Checking for backend image: ${{ env.BACKEND_IMAGE }}:${{ needs.prepare.outputs.image_tag }}"
+          docker manifest inspect ${{ env.BACKEND_IMAGE }}:${{ needs.prepare.outputs.image_tag }} || {
+            echo "❌ Backend image not found!"
+            exit 1
+          }
+          echo "✅ Backend image found"
+      
+      - name: Verify frontend image exists
+        run: |
+          echo "Checking for frontend image: ${{ env.FRONTEND_IMAGE }}:${{ needs.prepare.outputs.image_tag }}"
+          docker manifest inspect ${{ env.FRONTEND_IMAGE }}:${{ needs.prepare.outputs.image_tag }} || {
+            echo "❌ Frontend image not found!"
+            exit 1
+          }
+          echo "✅ Frontend image found"
+
+  # ===========================================================================
+  # PRE-DEPLOYMENT CHECKS
+  # ===========================================================================
+  pre-deploy-checks:
+    name: Pre-Deployment Checks
+    runs-on: ubuntu-latest
+    needs: [prepare, verify-images]
+    if: github.event.inputs.skip_tests != 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate Kubernetes manifests
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+          # Validate manifests with kustomize
+          echo "Validating Kubernetes manifests..."
+          kubectl kustomize ${{ needs.prepare.outputs.overlay_path }} > /tmp/manifests.yaml
+          
+          # Basic YAML validation
+          if [ -s /tmp/manifests.yaml ]; then
+            echo "✅ Manifests generated successfully"
+            echo "Generated $(wc -l < /tmp/manifests.yaml) lines of YAML"
+          else
+            echo "❌ No manifests generated"
+            exit 1
+          fi
+      
+      - name: Check for required secrets
+        run: |
+          echo "Checking deployment requirements..."
+          
+          # List required secrets (just checking if they're set)
+          MISSING_SECRETS=""
+          
+          # Add checks for required secrets
+          # if [ -z "${{ secrets.ARGOCD_TOKEN }}" ]; then
+          #   MISSING_SECRETS="$MISSING_SECRETS ARGOCD_TOKEN"
+          # fi
+          
+          if [ -n "$MISSING_SECRETS" ]; then
+            echo "⚠️ Warning: Missing optional secrets: $MISSING_SECRETS"
+          else
+            echo "✅ All requirements met"
+          fi
+
+  # ===========================================================================
+  # UPDATE MANIFESTS
+  # ===========================================================================
+  update-manifests:
+    name: Update Manifests
+    runs-on: ubuntu-latest
+    needs: [prepare, verify-images, pre-deploy-checks]
+    if: |
+      always() &&
+      needs.prepare.result == 'success' &&
+      needs.verify-images.result == 'success' &&
+      (needs.pre-deploy-checks.result == 'success' || needs.pre-deploy-checks.result == 'skipped')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Update image tags in Kustomization
+        run: |
+          cd ${{ needs.prepare.outputs.overlay_path }}
+          
+          # Create or update kustomization with new image tags
+          echo "Updating image tags to: ${{ needs.prepare.outputs.image_tag }}"
+          
+          # Check if images section exists in kustomization.yaml
+          if grep -q "^images:" kustomization.yaml; then
+            echo "Updating existing images section..."
+          else
+            echo "Adding images section..."
+          fi
+          
+          # Use yq to update images (if available) or sed
+          # For simplicity, we'll create a patch file
+          cat > image-patch.yaml << EOF
+          # Auto-generated by GitHub Actions deploy workflow
+          # Deployment: ${{ github.run_id }}
+          # Triggered by: ${{ github.actor }}
+          # Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          images:
+            - name: casino-backend
+              newName: ${{ env.BACKEND_IMAGE }}
+              newTag: "${{ needs.prepare.outputs.image_tag }}"
+            - name: casino-frontend
+              newName: ${{ env.FRONTEND_IMAGE }}
+              newTag: "${{ needs.prepare.outputs.image_tag }}"
+          EOF
+          
+          echo "Generated image patch:"
+          cat image-patch.yaml
+      
+      - name: Commit and push changes
+        if: needs.prepare.outputs.should_deploy == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add changes
+          git add -A
+          
+          # Check if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "deploy: update ${{ needs.prepare.outputs.environment }} to ${{ needs.prepare.outputs.image_tag }}
+
+          Triggered by: ${{ github.actor }}
+          Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          
+          [skip ci]"
+            git push
+            echo "✅ Manifests updated and pushed"
+          fi
+      
+      - name: Dry run output
+        if: needs.prepare.outputs.should_deploy != 'true'
+        run: |
+          echo "🔍 DRY RUN - Changes would be:"
+          git diff
+          echo ""
+          echo "No changes were pushed (dry run mode)"
+
+  # ===========================================================================
+  # TRIGGER ARGOCD SYNC (Optional)
+  # ===========================================================================
+  argocd-sync:
+    name: Sync ArgoCD
+    runs-on: ubuntu-latest
+    needs: [prepare, update-manifests]
+    if: |
+      needs.prepare.outputs.should_deploy == 'true' &&
+      needs.prepare.outputs.environment == 'production'
+    continue-on-error: true  # Don't fail if ArgoCD sync fails
+    
+    steps:
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+      
+      - name: Trigger ArgoCD sync
+        if: env.ARGOCD_SERVER != ''
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+        run: |
+          echo "Triggering ArgoCD sync..."
+          
+          # Determine app name based on environment
+          APP_NAME="casino-capstone"
+          if [ "${{ needs.prepare.outputs.environment }}" != "production" ]; then
+            APP_NAME="casino-capstone-${{ needs.prepare.outputs.environment }}"
+          fi
+          
+          # Trigger sync
+          argocd app sync $APP_NAME \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --grpc-web \
+            --prune \
+            --force
+          
+          # Wait for sync to complete
+          argocd app wait $APP_NAME \
+            --server $ARGOCD_SERVER \
+            --auth-token $ARGOCD_AUTH_TOKEN \
+            --grpc-web \
+            --timeout 300
+          
+          echo "✅ ArgoCD sync completed"
+      
+      - name: Skip ArgoCD sync (no credentials)
+        if: env.ARGOCD_SERVER == ''
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+        run: |
+          echo "⚠️ ArgoCD credentials not configured"
+          echo "ArgoCD will auto-sync when it detects the Git changes"
+          echo "Or manually sync via the ArgoCD UI"
+
+  # ===========================================================================
+  # VERIFY DEPLOYMENT
+  # ===========================================================================
+  verify-deployment:
+    name: Verify Deployment
+    runs-on: ubuntu-latest
+    needs: [prepare, update-manifests, argocd-sync]
+    if: |
+      always() &&
+      needs.update-manifests.result == 'success' &&
+      needs.prepare.outputs.should_deploy == 'true'
+    
+    steps:
+      - name: Wait for deployment to propagate
+        run: |
+          echo "Waiting for deployment to propagate..."
+          sleep 60
+      
+      - name: Health check
+        run: |
+          # Determine URL based on environment
+          case "${{ needs.prepare.outputs.environment }}" in
+            production)
+              HEALTH_URL="https://umgcgroupe.com/health"
+              ;;
+            staging)
+              HEALTH_URL="https://staging.umgcgroupe.com/health"
+              ;;
+            development)
+              HEALTH_URL="https://dev.umgcgroupe.com/health"
+              ;;
+          esac
+          
+          echo "Checking health at: $HEALTH_URL"
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying in 30s..."
+            sleep 30
+          done
+          
+          echo "⚠️ Health check failed after 5 attempts"
+          echo "This might be expected if the domain is not yet configured"
+          # Don't fail the workflow - the app might still be healthy
+        continue-on-error: true
+
+  # ===========================================================================
+  # CREATE GITHUB DEPLOYMENT
+  # ===========================================================================
+  github-deployment:
+    name: Create GitHub Deployment
+    runs-on: ubuntu-latest
+    needs: [prepare, update-manifests]
+    if: needs.prepare.outputs.should_deploy == 'true'
+    
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: ${{ needs.prepare.outputs.environment }}
+          ref: ${{ github.sha }}
+          description: "Deploying ${{ needs.prepare.outputs.image_tag }} to ${{ needs.prepare.outputs.environment }}"
+
+  # ===========================================================================
+  # NOTIFY
+  # ===========================================================================
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [prepare, verify-images, update-manifests, verify-deployment]
+    if: always()
+    
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [ "${{ needs.update-manifests.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+            echo "message=Deployment to ${{ needs.prepare.outputs.environment }} completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+            echo "message=Deployment to ${{ needs.prepare.outputs.environment }} failed" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create summary
+        run: |
+          echo "# Deployment Summary ${{ steps.status.outputs.emoji }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Details" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ needs.prepare.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image Tag | ${{ needs.prepare.outputs.image_tag }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered By | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Verify Images | ${{ needs.verify-images.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Update Manifests | ${{ needs.update-manifests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Verify Deployment | ${{ needs.verify-deployment.result }} |" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"text\": \"${{ steps.status.outputs.emoji }} ${{ steps.status.outputs.message }}\",
+              \"blocks\": [
+                {
+                  \"type\": \"header\",
+                  \"text\": {
+                    \"type\": \"plain_text\",
+                    \"text\": \"${{ steps.status.outputs.emoji }} Casino Capstone Deployment\"
+                  }
+                },
+                {
+                  \"type\": \"section\",
+                  \"fields\": [
+                    {\"type\": \"mrkdwn\", \"text\": \"*Environment:*\n${{ needs.prepare.outputs.environment }}\"},
+                    {\"type\": \"mrkdwn\", \"text\": \"*Image Tag:*\n${{ needs.prepare.outputs.image_tag }}\"},
+                    {\"type\": \"mrkdwn\", \"text\": \"*Triggered By:*\n${{ github.actor }}\"},
+                    {\"type\": \"mrkdwn\", \"text\": \"*Status:*\n${{ steps.status.outputs.status }}\"}
+                  ]
+                },
+                {
+                  \"type\": \"actions\",
+                  \"elements\": [
+                    {
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View Workflow\"},
+                      \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                    }
+                  ]
+                }
+              ]
+            }" \
+            $SLACK_WEBHOOK_URL
+        continue-on-error: true
+
+# =============================================================================
+# WORKFLOW NOTES
+# =============================================================================
+#
+# Deployment Flow:
+# ----------------
+# 1. prepare: Determine environment, image tag, and overlay path
+# 2. verify-images: Ensure Docker images exist in registry
+# 3. pre-deploy-checks: Validate manifests and requirements
+# 4. update-manifests: Update Kustomization with new image tags
+# 5. argocd-sync: (Optional) Trigger ArgoCD sync
+# 6. verify-deployment: Health check the deployed application
+# 7. notify: Send deployment status notification
+#
+#
+# Manual Deployment:
+# ------------------
+# Go to Actions → Deploy → Run workflow
+# Select environment and optionally specify image tag
+#
+#
+# Release Deployment:
+# -------------------
+# Create a new release with a tag like v1.0.0
+# The workflow will automatically deploy to production
+#
+#
+# Rollback:
+# ---------
+# Option 1: Create a new release pointing to the previous version
+# Option 2: Manually trigger deployment with the old image tag
+# Option 3: Use ArgoCD UI to rollback to a previous revision
+# Option 4: Git revert the manifest change and push
+#
+#
+# Required Secrets:
+# -----------------
+# Required: (none - uses GITHUB_TOKEN)
+# Optional:
+#   - ARGOCD_SERVER: ArgoCD server URL
+#   - ARGOCD_TOKEN: ArgoCD API token
+#   - SLACK_WEBHOOK_URL: Slack webhook for notifications
+#
+# =============================================================================

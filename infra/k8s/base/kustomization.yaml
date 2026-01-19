@@ -1,0 +1,263 @@
+# =============================================================================
+# KUSTOMIZATION.YAML - BASE KUBERNETES MANIFESTS
+# =============================================================================
+# Kustomize is a Kubernetes-native configuration management tool that lets you
+# customize raw Kubernetes manifests without modifying the original files.
+#
+# Why Kustomize?
+# --------------
+#   1. No templating language (unlike Helm) - pure YAML
+#   2. Built into kubectl (kubectl apply -k)
+#   3. Environment-specific overlays (dev, staging, prod)
+#   4. Patch existing resources without copying entire files
+#   5. Generate ConfigMaps and Secrets from files
+#
+# Directory Structure:
+# --------------------
+#   k8s/
+#   ├── base/                    # Base manifests (this directory)
+#   │   ├── kustomization.yaml   # This file
+#   │   ├── namespace.yaml
+#   │   ├── postgres/
+#   │   ├── backend/
+#   │   ├── frontend/
+#   │   └── ingress/
+#   └── overlays/
+#       ├── dev/                 # Development overrides
+#       │   └── kustomization.yaml
+#       └── prod/                # Production overrides
+#           └── kustomization.yaml
+#
+# Usage:
+# ------
+#   # Preview what will be applied
+#   kubectl kustomize infra/k8s/base
+#
+#   # Apply base manifests
+#   kubectl apply -k infra/k8s/base
+#
+#   # Apply with overlay
+#   kubectl apply -k infra/k8s/overlays/dev
+#   kubectl apply -k infra/k8s/overlays/prod
+#
+#   # Delete all resources
+#   kubectl delete -k infra/k8s/base
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# =============================================================================
+# METADATA
+# =============================================================================
+
+# Namespace to apply to all resources (can be overridden)
+namespace: casino
+
+# Common labels added to all resources
+commonLabels:
+  app.kubernetes.io/part-of: casino-capstone
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations added to all resources
+commonAnnotations:
+  project: casino-capstone
+  team: cs-capstone
+
+# =============================================================================
+# RESOURCES
+# =============================================================================
+# List all manifest files/directories to include.
+# Order matters - resources are created in this order.
+
+resources:
+  # Namespace must be created first
+  - namespace.yaml
+  
+  # PostgreSQL (database)
+  - postgres/secret.yaml
+  - postgres/pvc.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  
+  # Backend API
+  - backend/configmap.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  
+  # Frontend
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  
+  # Ingress (external access)
+  - ingress/ingress.yaml
+
+# =============================================================================
+# IMAGES
+# =============================================================================
+# Override image names/tags without modifying the original manifests.
+# Useful for:
+#   - Pinning to specific versions
+#   - Using different registries per environment
+#   - CI/CD pipelines that inject image tags
+
+images:
+  # Backend image
+  - name: casino-backend
+    newName: casino-backend
+    newTag: latest
+  
+  # Frontend image
+  - name: casino-frontend
+    newName: casino-frontend
+    newTag: latest
+  
+  # PostgreSQL image (optional - pin to specific version)
+  - name: postgres
+    newName: postgres
+    newTag: "16-alpine"
+
+# =============================================================================
+# CONFIGMAP GENERATOR (Optional)
+# =============================================================================
+# Generate ConfigMaps from files or literals.
+# Kustomize adds a hash suffix to force pod restarts when config changes.
+
+# configMapGenerator:
+#   - name: backend-config
+#     behavior: create  # create, replace, or merge
+#     files:
+#       - config.json
+#     literals:
+#       - LOG_LEVEL=info
+#       - APP_ENV=development
+
+# =============================================================================
+# SECRET GENERATOR (Optional)
+# =============================================================================
+# Generate Secrets from files or literals.
+# WARNING: Secrets in Git are not secure! Use external secret management.
+
+# secretGenerator:
+#   - name: app-secrets
+#     type: Opaque
+#     literals:
+#       - api-key=your-api-key
+#     files:
+#       - credentials.json
+
+# =============================================================================
+# PATCHES
+# =============================================================================
+# Apply patches to modify resources.
+# Three types of patches:
+#   1. Strategic Merge Patch (patches)
+#   2. JSON 6902 Patch (patchesJson6902)
+#   3. Inline patches (patchesStrategicMerge)
+
+# Example: Patch to add resource limits
+# patches:
+#   - patch: |-
+#       apiVersion: apps/v1
+#       kind: Deployment
+#       metadata:
+#         name: backend
+#       spec:
+#         template:
+#           spec:
+#             containers:
+#               - name: backend
+#                 resources:
+#                   limits:
+#                     cpu: "1"
+#                     memory: "1Gi"
+
+# =============================================================================
+# REPLACEMENTS (Kustomize 4.0+)
+# =============================================================================
+# Replace values across resources.
+# More powerful than vars (which are deprecated).
+
+# replacements:
+#   - source:
+#       kind: ConfigMap
+#       name: backend-config
+#       fieldPath: data.API_PORT
+#     targets:
+#       - select:
+#           kind: Service
+#           name: backend
+#         fieldPaths:
+#           - spec.ports.[name=http].port
+
+# =============================================================================
+# COMPONENTS (Optional)
+# =============================================================================
+# Reusable kustomization fragments.
+# Useful for optional features that can be included/excluded.
+
+# components:
+#   - ../../components/monitoring
+#   - ../../components/logging
+
+# =============================================================================
+# GENERATORS (Optional)
+# =============================================================================
+# Custom generators for creating resources.
+
+# generators:
+#   - secret-generator.yaml
+
+# =============================================================================
+# TRANSFORMERS (Optional)
+# =============================================================================
+# Custom transformers for modifying resources.
+
+# transformers:
+#   - label-transformer.yaml
+
+# =============================================================================
+# BUILD METADATA
+# =============================================================================
+# Control how Kustomize generates output.
+
+# Add hash suffix to ConfigMap/Secret names (forces pod restart on change)
+generatorOptions:
+  disableNameSuffixHash: false
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+#
+# Preview generated manifests:
+# ----------------------------
+# kubectl kustomize infra/k8s/base
+# kubectl kustomize infra/k8s/base > all-manifests.yaml
+#
+#
+# Apply to cluster:
+# -----------------
+# kubectl apply -k infra/k8s/base
+#
+#
+# Dry run (see what would be applied):
+# ------------------------------------
+# kubectl apply -k infra/k8s/base --dry-run=client
+# kubectl apply -k infra/k8s/base --dry-run=server
+#
+#
+# Delete all resources:
+# ---------------------
+# kubectl delete -k infra/k8s/base
+#
+#
+# View specific resource:
+# -----------------------
+# kubectl kustomize infra/k8s/base | grep -A 50 "kind: Deployment"
+#
+#
+# Diff with current cluster state:
+# --------------------------------
+# kubectl diff -k infra/k8s/base
+#
+# =============================================================================

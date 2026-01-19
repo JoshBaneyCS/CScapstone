@@ -1,0 +1,293 @@
+# =============================================================================
+# STATEFULSET.YAML - POSTGRESQL DATABASE DEPLOYMENT
+# =============================================================================
+# A StatefulSet is used for stateful applications like databases that need:
+#   - Stable, unique network identifiers
+#   - Stable, persistent storage
+#   - Ordered, graceful deployment and scaling
+#   - Ordered, automated rolling updates
+#
+# Why StatefulSet instead of Deployment for PostgreSQL?
+# -----------------------------------------------------
+# Deployments are for stateless apps. StatefulSets provide:
+#   1. Stable pod names (postgres-0, postgres-1, etc.)
+#   2. Stable DNS names (postgres-0.postgres.casino.svc.cluster.local)
+#   3. Ordered startup/shutdown (important for replicas)
+#   4. Persistent volume binding that survives rescheduling
+#
+# PostgreSQL 16 Features:
+# -----------------------
+#   - Improved query performance
+#   - Better JSON support
+#   - Enhanced security features
+#   - Logical replication improvements
+#
+# Commands:
+#   kubectl apply -f statefulset.yaml -n casino
+#   kubectl get statefulset -n casino
+#   kubectl get pods -l app=postgres -n casino
+#   kubectl logs postgres-0 -n casino
+#   kubectl exec -it postgres-0 -n casino -- psql -U casino_admin -d casino_db
+# =============================================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: casino-capstone
+    app.kubernetes.io/version: "16"
+  annotations:
+    description: "PostgreSQL 16 database for Casino Capstone"
+spec:
+  # Service name for stable network identity
+  serviceName: postgres
+  
+  # Number of replicas - 1 for simplicity
+  # For high availability, consider using a PostgreSQL operator
+  replicas: 1
+  
+  # Selector must match template labels
+  selector:
+    matchLabels:
+      app: postgres
+      app.kubernetes.io/name: postgres
+  
+  # Update strategy
+  updateStrategy:
+    type: RollingUpdate
+  
+  # Pod template
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: casino-capstone
+      annotations:
+        # Prometheus metrics (if using monitoring)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+    spec:
+      # Termination grace period - give PostgreSQL time to shutdown cleanly
+      terminationGracePeriodSeconds: 30
+      
+      # Security context for the pod
+      securityContext:
+        # Run as postgres user (UID 999 in official image)
+        fsGroup: 999
+      
+      # Init container to set permissions on the data directory
+      initContainers:
+        - name: init-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              # Ensure data directory has correct permissions
+              chown -R 999:999 /var/lib/postgresql/data
+              chmod 700 /var/lib/postgresql/data
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0  # Run as root to set permissions
+      
+      containers:
+        - name: postgres
+          # Official PostgreSQL 16 image on Alpine (smaller)
+          image: postgres:16-alpine
+          
+          # Image pull policy
+          imagePullPolicy: IfNotPresent
+          
+          # Container ports
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          
+          # Environment variables from secrets
+          env:
+            # PostgreSQL superuser (required)
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            
+            # PostgreSQL password (required)
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            
+            # Default database to create
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: database
+            
+            # Data directory location
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          
+          # Volume mounts
+          volumeMounts:
+            # Persistent data volume
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            
+            # Custom configuration (optional)
+            # - name: postgres-config
+            #   mountPath: /etc/postgresql/postgresql.conf
+            #   subPath: postgresql.conf
+          
+          # Resource limits and requests
+          resources:
+            requests:
+              cpu: "250m"       # 0.25 CPU cores
+              memory: "512Mi"   # 512 MB RAM
+            limits:
+              cpu: "1000m"      # 1 CPU core
+              memory: "1Gi"     # 1 GB RAM
+          
+          # Liveness probe - is the container alive?
+          # If this fails, Kubernetes restarts the container
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          
+          # Readiness probe - is the container ready to serve traffic?
+          # If this fails, the pod is removed from service endpoints
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Security context for the container
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # PostgreSQL needs to write
+      
+      # Volumes
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# =============================================================================
+# OPTIONAL: POSTGRESQL CONFIGURATION CONFIGMAP
+# =============================================================================
+# Custom PostgreSQL configuration for tuning performance.
+# Uncomment and adjust based on your needs.
+# =============================================================================
+
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: postgres-config
+#   namespace: casino
+#   labels:
+#     app.kubernetes.io/name: postgres
+#     app.kubernetes.io/component: database
+# data:
+#   postgresql.conf: |
+#     # Connection settings
+#     listen_addresses = '*'
+#     port = 5432
+#     max_connections = 100
+#     
+#     # Memory settings (adjust based on available RAM)
+#     shared_buffers = 256MB
+#     effective_cache_size = 768MB
+#     work_mem = 4MB
+#     maintenance_work_mem = 64MB
+#     
+#     # Write ahead log
+#     wal_buffers = 8MB
+#     min_wal_size = 80MB
+#     max_wal_size = 1GB
+#     
+#     # Query planner
+#     random_page_cost = 1.1
+#     effective_io_concurrency = 200
+#     
+#     # Logging
+#     logging_collector = on
+#     log_directory = 'pg_log'
+#     log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+#     log_statement = 'mod'
+#     log_min_duration_statement = 1000
+
+---
+# =============================================================================
+# USAGE NOTES
+# =============================================================================
+#
+# Connect to PostgreSQL:
+# ----------------------
+# From within the cluster:
+#   Host: postgres.casino.svc.cluster.local
+#   Port: 5432
+#
+# From another pod in the same namespace:
+#   Host: postgres
+#   Port: 5432
+#
+# Port forward for local access:
+#   kubectl port-forward statefulset/postgres 5432:5432 -n casino
+#   psql -h localhost -U casino_admin -d casino_db
+#
+#
+# View logs:
+# ----------
+#   kubectl logs postgres-0 -n casino
+#   kubectl logs postgres-0 -n casino --follow
+#
+#
+# Execute SQL:
+# ------------
+#   kubectl exec -it postgres-0 -n casino -- psql -U casino_admin -d casino_db
+#
+#   # Run a specific query
+#   kubectl exec -it postgres-0 -n casino -- psql -U casino_admin -d casino_db -c "SELECT * FROM users;"
+#
+#
+# Backup database:
+# ----------------
+#   kubectl exec postgres-0 -n casino -- pg_dump -U casino_admin casino_db > backup.sql
+#
+#
+# Restore database:
+# -----------------
+#   kubectl exec -i postgres-0 -n casino -- psql -U casino_admin casino_db < backup.sql
+#
+# =============================================================================

@@ -1,0 +1,212 @@
+# =============================================================================
+# CONFIGMAP.YAML - BACKEND API CONFIGURATION
+# =============================================================================
+# A ConfigMap holds non-sensitive configuration data as key-value pairs.
+# Unlike Secrets, ConfigMaps are not base64 encoded and are meant for
+# configuration that doesn't need to be protected.
+#
+# ConfigMap vs Secret:
+# --------------------
+#   ConfigMap: API ports, feature flags, URLs, log levels
+#   Secret: Passwords, API keys, tokens, certificates
+#
+# How to use ConfigMaps:
+# ----------------------
+# 1. Environment variables (shown below)
+# 2. Command-line arguments
+# 3. Configuration files mounted as volumes
+#
+# Commands:
+#   kubectl apply -f configmap.yaml -n casino
+#   kubectl get configmap -n casino
+#   kubectl describe configmap backend-config -n casino
+#   kubectl get configmap backend-config -n casino -o yaml
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: casino-capstone
+  annotations:
+    description: "Configuration for the Casino Capstone backend API"
+spec: {}
+data:
+  # ===========================================================================
+  # SERVER CONFIGURATION
+  # ===========================================================================
+  
+  # Port the API server listens on
+  API_PORT: "8080"
+  
+  # Server timeouts (in seconds)
+  SERVER_READ_TIMEOUT: "15"
+  SERVER_WRITE_TIMEOUT: "15"
+  SERVER_IDLE_TIMEOUT: "60"
+  
+  # ===========================================================================
+  # CORS CONFIGURATION
+  # ===========================================================================
+  
+  # Frontend URL for CORS (allow requests from this origin)
+  # In production, this should be the actual domain
+  FRONTEND_URL: "http://localhost:5173"
+  
+  # Additional allowed origins (comma-separated)
+  # CORS_ALLOWED_ORIGINS: "https://umgcgroupe.com,https://www.umgcgroupe.com"
+  
+  # ===========================================================================
+  # COOKIE CONFIGURATION
+  # ===========================================================================
+  
+  # Whether to set Secure flag on cookies
+  # Set to "true" in production (requires HTTPS)
+  COOKIE_SECURE: "false"
+  
+  # Cookie domain (leave empty for current domain)
+  # COOKIE_DOMAIN: ".umgcgroupe.com"
+  
+  # Session duration in hours
+  SESSION_DURATION_HOURS: "24"
+  
+  # ===========================================================================
+  # DATABASE CONFIGURATION (non-sensitive parts)
+  # ===========================================================================
+  
+  # Database host (service name in Kubernetes)
+  DB_HOST: "postgres"
+  
+  # Database port
+  DB_PORT: "5432"
+  
+  # Database name (also in secret, but useful here for reference)
+  DB_NAME: "casino_db"
+  
+  # Connection pool settings
+  DB_MAX_CONNECTIONS: "25"
+  DB_MIN_CONNECTIONS: "5"
+  DB_MAX_CONN_LIFETIME: "1h"
+  
+  # SSL mode for database connection
+  # Options: disable, require, verify-ca, verify-full
+  DB_SSL_MODE: "disable"
+  
+  # ===========================================================================
+  # LOGGING CONFIGURATION
+  # ===========================================================================
+  
+  # Log level: debug, info, warn, error
+  LOG_LEVEL: "info"
+  
+  # Log format: json, text
+  LOG_FORMAT: "json"
+  
+  # Whether to include caller info in logs
+  LOG_CALLER: "false"
+  
+  # ===========================================================================
+  # APPLICATION SETTINGS
+  # ===========================================================================
+  
+  # Environment: development, staging, production
+  APP_ENV: "development"
+  
+  # Starting bankroll for new users (in cents)
+  # $2,500.00 = 250000 cents
+  STARTING_BANKROLL_CENTS: "250000"
+  
+  # Minimum age requirement
+  MIN_AGE_YEARS: "21"
+  
+  # ===========================================================================
+  # GAME SETTINGS
+  # ===========================================================================
+  
+  # Blackjack bet limits (in cents)
+  BLACKJACK_MIN_BET: "100"      # $1.00
+  BLACKJACK_MAX_BET: "10000"    # $100.00
+  
+  # Poker bet limits (in cents)
+  POKER_MIN_BET: "500"          # $5.00
+  POKER_MAX_BET: "50000"        # $500.00
+  
+  # ===========================================================================
+  # FEATURE FLAGS
+  # ===========================================================================
+  
+  # Enable/disable features without redeploying
+  FEATURE_BLACKJACK_ENABLED: "true"
+  FEATURE_POKER_ENABLED: "true"
+  FEATURE_SLOTS_ENABLED: "false"
+  FEATURE_ROULETTE_ENABLED: "false"
+  
+  # Enable debug endpoints (DISABLE IN PRODUCTION!)
+  DEBUG_ENDPOINTS_ENABLED: "false"
+  
+  # ===========================================================================
+  # RATE LIMITING
+  # ===========================================================================
+  
+  # Requests per minute per IP
+  RATE_LIMIT_RPM: "100"
+  
+  # Burst limit
+  RATE_LIMIT_BURST: "20"
+
+---
+# =============================================================================
+# USAGE IN DEPLOYMENT
+# =============================================================================
+# In your deployment.yaml, reference this ConfigMap:
+#
+# spec:
+#   containers:
+#     - name: backend
+#       envFrom:
+#         - configMapRef:
+#             name: backend-config
+#
+# Or for specific keys:
+#
+# spec:
+#   containers:
+#     - name: backend
+#       env:
+#         - name: API_PORT
+#           valueFrom:
+#             configMapKeyRef:
+#               name: backend-config
+#               key: API_PORT
+#
+# =============================================================================
+
+---
+# =============================================================================
+# ENVIRONMENT-SPECIFIC OVERRIDES
+# =============================================================================
+# These values are typically overridden in Kustomize overlays:
+#
+# overlays/dev/kustomization.yaml:
+#   configMapGenerator:
+#     - name: backend-config
+#       behavior: merge
+#       literals:
+#         - APP_ENV=development
+#         - COOKIE_SECURE=false
+#         - LOG_LEVEL=debug
+#
+# overlays/prod/kustomization.yaml:
+#   configMapGenerator:
+#     - name: backend-config
+#       behavior: merge
+#       literals:
+#         - APP_ENV=production
+#         - COOKIE_SECURE=true
+#         - LOG_LEVEL=info
+#         - FRONTEND_URL=https://umgcgroupe.com
+#
+# =============================================================================

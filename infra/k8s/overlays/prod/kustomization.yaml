@@ -1,0 +1,489 @@
+# =============================================================================
+# KUSTOMIZATION.YAML - PRODUCTION OVERLAY
+# =============================================================================
+# This overlay customizes the base manifests for the PRODUCTION environment.
+#
+# Production Environment Characteristics:
+# ---------------------------------------
+#   - Higher resource limits for real traffic
+#   - Multiple replicas for high availability
+#   - HTTPS required (COOKIE_SECURE=true)
+#   - Info-level logging (not debug)
+#   - Real domain: umgcgroupe.com
+#   - TLS certificates enabled
+#   - HPA and PDB enabled
+#   - 30GB PVC for database
+#
+# IMPORTANT SECURITY NOTES:
+# -------------------------
+#   1. Never commit real secrets to Git
+#   2. Use external secret management (Sealed Secrets, Vault, etc.)
+#   3. Review all settings before deploying to production
+#   4. Ensure TLS certificates are properly configured
+#
+# Usage:
+# ------
+#   # Preview
+#   kubectl kustomize infra/k8s/overlays/prod
+#
+#   # Apply
+#   kubectl apply -k infra/k8s/overlays/prod
+#
+#   # Apply with dry-run first
+#   kubectl apply -k infra/k8s/overlays/prod --dry-run=server
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# =============================================================================
+# BASE REFERENCE
+# =============================================================================
+
+resources:
+  - ../../base
+
+# =============================================================================
+# NAMESPACE
+# =============================================================================
+
+namespace: casino
+
+# =============================================================================
+# COMMON LABELS
+# =============================================================================
+
+commonLabels:
+  environment: production
+
+# =============================================================================
+# COMMON ANNOTATIONS
+# =============================================================================
+
+commonAnnotations:
+  environment: production
+  description: "Production deployment of Casino Capstone on umgcgroupe.com"
+
+# =============================================================================
+# IMAGES
+# =============================================================================
+# Use versioned image tags in production (NEVER use :latest in prod!)
+# Update these tags during CI/CD pipeline
+
+images:
+  # Backend - use specific version tag
+  - name: casino-backend
+    newName: ghcr.io/joshbaneycs/cscapstone/backend  # GitHub Container Registry
+    newTag: v1.0.0  # Update this in CI/CD
+  
+  # Frontend - use specific version tag
+  - name: casino-frontend
+    newName: ghcr.io/joshbaneycs/cscapstone/frontend
+    newTag: v1.0.0  # Update this in CI/CD
+  
+  # PostgreSQL - pin to specific version
+  - name: postgres
+    newName: postgres
+    newTag: "16.1-alpine"  # Specific patch version
+
+# =============================================================================
+# CONFIGMAP CUSTOMIZATION
+# =============================================================================
+# Production-specific configuration
+
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      # Environment
+      - APP_ENV=production
+      
+      # Logging - info level for production (less verbose)
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - LOG_CALLER=false
+      
+      # Security - HTTPS required
+      - COOKIE_SECURE=true
+      
+      # Frontend URL for CORS (production domain)
+      - FRONTEND_URL=https://umgcgroupe.com
+      
+      # Additional CORS origins
+      - CORS_ALLOWED_ORIGINS=https://umgcgroupe.com,https://www.umgcgroupe.com
+      
+      # Feature flags - disable debug endpoints
+      - DEBUG_ENDPOINTS_ENABLED=false
+      
+      # Rate limiting - enabled for production
+      - RATE_LIMIT_RPM=100
+      - RATE_LIMIT_BURST=20
+      
+      # Database connection pool (higher for production traffic)
+      - DB_MAX_CONNECTIONS=50
+      - DB_MIN_CONNECTIONS=10
+
+# =============================================================================
+# PATCHES - PRODUCTION REPLICAS
+# =============================================================================
+# Higher replica counts for high availability
+
+patches:
+  # Backend - 3 replicas for HA
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        replicas: 3
+    target:
+      kind: Deployment
+      name: backend
+
+  # Frontend - 3 replicas for HA
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 3
+    target:
+      kind: Deployment
+      name: frontend
+
+# =============================================================================
+# PATCHES - PRODUCTION RESOURCE LIMITS
+# =============================================================================
+# Higher resource limits for production traffic
+
+  # Backend resources - production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: "250m"
+                    memory: "256Mi"
+                  limits:
+                    cpu: "1000m"
+                    memory: "1Gi"
+    target:
+      kind: Deployment
+      name: backend
+
+  # Frontend resources - production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: frontend
+                resources:
+                  requests:
+                    cpu: "100m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "256Mi"
+    target:
+      kind: Deployment
+      name: frontend
+
+  # PostgreSQL resources - production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+      spec:
+        template:
+          spec:
+            containers:
+              - name: postgres
+                resources:
+                  requests:
+                    cpu: "500m"
+                    memory: "1Gi"
+                  limits:
+                    cpu: "2000m"
+                    memory: "2Gi"
+    target:
+      kind: StatefulSet
+      name: postgres
+
+# =============================================================================
+# PATCHES - PRODUCTION PVC SIZE
+# =============================================================================
+# Full 30GB PVC for production
+
+  - patch: |-
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: postgres-pvc
+      spec:
+        resources:
+          requests:
+            storage: 30Gi
+    target:
+      kind: PersistentVolumeClaim
+      name: postgres-pvc
+
+# =============================================================================
+# PATCHES - PRODUCTION INGRESS
+# =============================================================================
+# Production ingress with TLS and proper domain
+
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: casino-ingress
+        annotations:
+          # Force HTTPS
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          # Use cert-manager for TLS
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+          # Security headers
+          nginx.ingress.kubernetes.io/configuration-snippet: |
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      spec:
+        tls:
+          - hosts:
+              - umgcgroupe.com
+              - www.umgcgroupe.com
+            secretName: casino-tls-secret
+        rules:
+          - host: umgcgroupe.com
+            http:
+              paths:
+                - path: /api
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: backend
+                      port:
+                        number: 8080
+                - path: /health
+                  pathType: Exact
+                  backend:
+                    service:
+                      name: backend
+                      port:
+                        number: 8080
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend
+                      port:
+                        number: 80
+          - host: www.umgcgroupe.com
+            http:
+              paths:
+                - path: /api
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: backend
+                      port:
+                        number: 8080
+                - path: /health
+                  pathType: Exact
+                  backend:
+                    service:
+                      name: backend
+                      port:
+                        number: 8080
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend
+                      port:
+                        number: 80
+    target:
+      kind: Ingress
+      name: casino-ingress
+
+# =============================================================================
+# PATCHES - PRODUCTION HPA
+# =============================================================================
+# Update HPA for production scaling
+
+  - patch: |-
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: backend-hpa
+      spec:
+        minReplicas: 3
+        maxReplicas: 20
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+          - type: Resource
+            resource:
+              name: memory
+              target:
+                type: Utilization
+                averageUtilization: 80
+    target:
+      kind: HorizontalPodAutoscaler
+      name: backend-hpa
+
+  - patch: |-
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: frontend-hpa
+      spec:
+        minReplicas: 3
+        maxReplicas: 15
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: 70
+    target:
+      kind: HorizontalPodAutoscaler
+      name: frontend-hpa
+
+# =============================================================================
+# PATCHES - PRODUCTION PDB
+# =============================================================================
+# Ensure high availability during maintenance
+
+  - patch: |-
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: backend-pdb
+      spec:
+        minAvailable: 2
+    target:
+      kind: PodDisruptionBudget
+      name: backend-pdb
+
+  - patch: |-
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: frontend-pdb
+      spec:
+        minAvailable: 2
+    target:
+      kind: PodDisruptionBudget
+      name: frontend-pdb
+
+# =============================================================================
+# PATCHES - IMAGE PULL POLICY
+# =============================================================================
+# Always pull images in production to ensure latest version
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                imagePullPolicy: Always
+    target:
+      kind: Deployment
+      name: backend
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: frontend
+                imagePullPolicy: Always
+    target:
+      kind: Deployment
+      name: frontend
+
+# =============================================================================
+# PRODUCTION DEPLOYMENT CHECKLIST
+# =============================================================================
+#
+# Before deploying to production:
+# -------------------------------
+# [ ] Update image tags to specific versions (not :latest)
+# [ ] Verify secrets are properly configured (use external secret management)
+# [ ] Ensure TLS certificates are valid
+# [ ] Configure DNS records for umgcgroupe.com
+# [ ] Set up monitoring and alerting
+# [ ] Configure log aggregation
+# [ ] Test backup and restore procedures
+# [ ] Review resource limits based on expected traffic
+# [ ] Enable rate limiting
+# [ ] Test failover scenarios
+#
+#
+# DNS Configuration:
+# ------------------
+# Add these records pointing to your cluster's external IP/LB:
+#   A     umgcgroupe.com       <external-ip>
+#   A     www.umgcgroupe.com   <external-ip>
+#
+#
+# TLS Certificate Setup (cert-manager):
+# -------------------------------------
+# 1. Install cert-manager:
+#    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+#
+# 2. Create ClusterIssuer (included in base ingress):
+#    kubectl apply -f infra/k8s/base/ingress/cluster-issuer.yaml
+#
+# 3. Certificate will be automatically provisioned when Ingress is created
+#
+#
+# Monitoring Setup:
+# -----------------
+# Consider adding:
+#   - Prometheus for metrics
+#   - Grafana for dashboards
+#   - Loki for logs
+#   - AlertManager for alerts
+#
+#
+# Backup Strategy:
+# ----------------
+# 1. Set up Velero for cluster backups
+# 2. Configure PostgreSQL backups (pg_dump CronJob)
+# 3. Test restore procedures regularly
+#
+# =============================================================================

@@ -1,0 +1,311 @@
+# =============================================================================
+# APPLICATION.YAML - ARGOCD APPLICATION FOR CASINO CAPSTONE
+# =============================================================================
+# An ArgoCD Application is a Custom Resource Definition (CRD) that tells ArgoCD
+# how to deploy your application. It defines:
+#   - Source: Where to get the manifests (Git repository)
+#   - Destination: Where to deploy (Kubernetes cluster/namespace)
+#   - Sync Policy: How and when to sync (manual/automatic)
+#
+# GitOps Workflow:
+# ----------------
+#   1. Developer pushes code to GitHub
+#   2. CI pipeline builds images and updates image tags in Git
+#   3. ArgoCD detects changes in Git
+#   4. ArgoCD syncs changes to Kubernetes cluster
+#   5. Application is updated with zero downtime
+#
+# Benefits of GitOps:
+# -------------------
+#   - Git is the single source of truth
+#   - All changes are auditable (Git history)
+#   - Easy rollbacks (git revert)
+#   - Declarative configuration
+#   - Self-healing (ArgoCD reconciles drift)
+#
+# Prerequisites:
+# --------------
+#   1. ArgoCD installed in the cluster
+#   2. Git repository accessible to ArgoCD
+#   3. (Optional) GitHub credentials for private repos
+#
+# Commands:
+#   kubectl apply -f application.yaml -n argocd
+#   argocd app list
+#   argocd app get casino-capstone
+#   argocd app sync casino-capstone
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  # Application name - shows up in ArgoCD UI
+  name: casino-capstone
+  
+  # ArgoCD applications must be in the argocd namespace
+  namespace: argocd
+  
+  labels:
+    app.kubernetes.io/name: casino-capstone
+    app.kubernetes.io/part-of: casino-capstone
+    team: cs-capstone
+  
+  annotations:
+    description: "Casino Capstone full-stack application"
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: casino-deployments
+  
+  # Finalizer ensures proper cleanup when Application is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  # ===========================================================================
+  # PROJECT
+  # ===========================================================================
+  # ArgoCD Project this application belongs to
+  # 'default' is the built-in project; create custom projects for better RBAC
+  project: default
+
+  # ===========================================================================
+  # SOURCE - Where to get the manifests
+  # ===========================================================================
+  source:
+    # Git repository URL
+    repoURL: https://github.com/JoshBaneyCS/CScapstone.git
+    
+    # Branch, tag, or commit to deploy
+    # Use 'main' for production, or specific tags for releases
+    targetRevision: main
+    
+    # Path to Kustomize manifests within the repository
+    # Change to overlays/dev or overlays/prod as needed
+    path: infra/k8s/overlays/prod
+    
+    # Kustomize configuration
+    kustomize:
+      # Override image tags (useful for CI/CD pipelines)
+      # ArgoCD Image Updater can automatically update these
+      images:
+        - casino-backend:latest
+        - casino-frontend:latest
+      
+      # Common labels to add
+      commonLabels:
+        deployed-by: argocd
+      
+      # Common annotations
+      commonAnnotations:
+        argocd.argoproj.io/managed: "true"
+
+  # ===========================================================================
+  # DESTINATION - Where to deploy
+  # ===========================================================================
+  destination:
+    # Kubernetes API server URL
+    # 'https://kubernetes.default.svc' for in-cluster deployment
+    server: https://kubernetes.default.svc
+    
+    # Target namespace
+    namespace: casino
+
+  # ===========================================================================
+  # SYNC POLICY - How and when to sync
+  # ===========================================================================
+  syncPolicy:
+    # Automated sync configuration
+    automated:
+      # Automatically sync when Git changes are detected
+      selfHeal: true
+      
+      # Automatically prune resources deleted from Git
+      prune: true
+      
+      # Allow empty (delete all resources if manifest is empty)
+      # Set to false for safety
+      allowEmpty: false
+
+    # Sync options
+    syncOptions:
+      # Create namespace if it doesn't exist
+      - CreateNamespace=true
+      
+      # Validate manifests before applying
+      - Validate=true
+      
+      # Use server-side apply for better conflict resolution
+      - ServerSideApply=true
+      
+      # Prune last (delete resources after all creates/updates)
+      - PruneLast=true
+      
+      # Respect ignore differences annotations
+      - RespectIgnoreDifferences=true
+      
+      # Apply out of sync only (faster syncs)
+      - ApplyOutOfSyncOnly=true
+
+    # Retry configuration for failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # ===========================================================================
+  # IGNORE DIFFERENCES
+  # ===========================================================================
+  # Ignore certain fields that are dynamically set by Kubernetes
+  # Prevents false "OutOfSync" states
+  ignoreDifferences:
+    # Ignore replicas managed by HPA
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    
+    # Ignore webhook CA bundles (managed by cert-manager)
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+    
+    # Ignore service account secrets
+    - group: ""
+      kind: ServiceAccount
+      jsonPointers:
+        - /secrets
+
+  # ===========================================================================
+  # REVISION HISTORY LIMIT
+  # ===========================================================================
+  # Number of deployment revisions to keep for rollback
+  revisionHistoryLimit: 10
+
+---
+# =============================================================================
+# DEVELOPMENT APPLICATION
+# =============================================================================
+# Separate Application for development environment
+# Uses the dev overlay instead of prod
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: casino-capstone-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: casino-capstone
+    environment: development
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/JoshBaneyCS/CScapstone.git
+    targetRevision: develop  # Use develop branch for dev
+    path: infra/k8s/overlays/dev
+    
+    kustomize:
+      images:
+        - casino-backend:dev
+        - casino-frontend:dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: casino  # Or casino-dev for separate namespace
+
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 5
+
+---
+# =============================================================================
+# ARGOCD APPLICATION USAGE
+# =============================================================================
+#
+# Install ArgoCD:
+# ---------------
+# kubectl create namespace argocd
+# kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+#
+#
+# Get ArgoCD admin password:
+# --------------------------
+# kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+#
+#
+# Access ArgoCD UI:
+# -----------------
+# kubectl port-forward svc/argocd-server -n argocd 8080:443
+# # Open https://localhost:8080
+# # Username: admin
+# # Password: (from command above)
+#
+#
+# Install ArgoCD CLI:
+# -------------------
+# # macOS
+# brew install argocd
+#
+# # Linux
+# curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+# chmod +x argocd && sudo mv argocd /usr/local/bin/
+#
+#
+# Login with CLI:
+# ---------------
+# argocd login localhost:8080 --username admin --password <password> --insecure
+#
+#
+# Apply Application:
+# ------------------
+# kubectl apply -f application.yaml -n argocd
+#
+#
+# CLI Commands:
+# -------------
+# argocd app list                          # List all applications
+# argocd app get casino-capstone           # Get application details
+# argocd app sync casino-capstone          # Manually sync
+# argocd app diff casino-capstone          # Show diff with Git
+# argocd app history casino-capstone       # Show deployment history
+# argocd app rollback casino-capstone 2    # Rollback to revision 2
+#
+#
+# Sync Status:
+# ------------
+# - Synced: Cluster matches Git
+# - OutOfSync: Cluster differs from Git
+# - Unknown: ArgoCD can't determine status
+#
+# Health Status:
+# --------------
+# - Healthy: All resources are healthy
+# - Progressing: Resources are still starting
+# - Degraded: Some resources are unhealthy
+# - Suspended: Resources are suspended
+#
+# =============================================================================
