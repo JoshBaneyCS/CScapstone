@@ -18,9 +18,9 @@
 
 | Layer       | Technology       |
 |-------------|------------------|
-| Frontend    | *TBD*            |
-| Backend     | *TBD*            |
-| Database    | *TBD*            |
+| Frontend    | Python, TS       |
+| Backend     | Python, GO       |
+| Database    | Postgres/mysql   |
 | Infrastructure    | Cloud Native, but self hosted Kubernetes. Cloudflare, Traefik or HAProxy          |
 | Deployment  | ArgoCD, GitHub Actions, Grafana/Prometheus. Kubernetes hosted on Prem, Block and S3-like storage. ARM64 Container registry within Kubernetes. Seperate Dev, Staging, and Prod Enviorments. Blue-Green Deployment using tags in GitHub.          |
 
@@ -62,8 +62,8 @@ cd your-repo
 |------|------|---------|
 | Josh | DevOps / SRE, Backend | [Email](mailto:joshnbaney@gmail.com) [Phone] (410-946-4226) |
 | Jerry | Backend | [Email](mailto:gardinjb@hotmail.com) [Phone] (607-661-6313) |
-| David | *Role* | [Email](mailto:atreusion@gmail.com) [Phone] (443-538-5585) |
-| Alan | *Role* | [Email](alanb97@icloud.com) [Phone] (562-219-1482) |
+| David | Full Stack | [Email](mailto:atreusion@gmail.com) [Phone] (443-538-5585) |
+| Alan | Full Stack | [Email](alanb97@icloud.com) [Phone] (562-219-1482) |
 
 ### Responsibilities
 
