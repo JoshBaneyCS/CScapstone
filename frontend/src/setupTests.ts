@@ -17,6 +17,7 @@
 // =============================================================================
 
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
 
 // =============================================================================
 // MOCK: FETCH API
@@ -24,7 +25,7 @@ import '@testing-library/jest-dom';
 // Mock the global fetch function for testing API calls.
 // Individual tests can override this with specific mock implementations.
 
-global.fetch = jest.fn(() =>
+global.fetch = vi.fn(() =>
   Promise.resolve({
     ok: true,
     json: () => Promise.resolve({}),
@@ -40,15 +41,15 @@ global.fetch = jest.fn(() =>
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: jest.fn().mockImplementation((query: string) => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,
-    addListener: jest.fn(), // Deprecated
-    removeListener: jest.fn(), // Deprecated
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    dispatchEvent: jest.fn(),
+    addListener: vi.fn(), // Deprecated
+    removeListener: vi.fn(), // Deprecated
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
   })),
 });
 
@@ -154,8 +155,8 @@ Object.defineProperty(window, 'ResizeObserver', {
 // =============================================================================
 // Mock scroll functions that aren't implemented in JSDOM.
 
-window.scrollTo = jest.fn();
-Element.prototype.scrollIntoView = jest.fn();
+window.scrollTo = vi.fn();
+Element.prototype.scrollIntoView = vi.fn();
 
 // =============================================================================
 // CLEANUP AFTER EACH TEST
@@ -164,14 +165,14 @@ Element.prototype.scrollIntoView = jest.fn();
 
 afterEach(() => {
   // Clear all mocks
-  jest.clearAllMocks();
-  
+  vi.clearAllMocks();
+
   // Clear storage
   localStorage.clear();
   sessionStorage.clear();
-  
+
   // Reset fetch mock
-  (global.fetch as jest.Mock).mockClear();
+  (global.fetch as ReturnType<typeof vi.fn>).mockClear();
 });
 
 // =============================================================================

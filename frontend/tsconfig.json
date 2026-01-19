@@ -130,7 +130,7 @@
     
     // types: Which @types packages to include
     // Empty array means only include types that are explicitly imported
-    "types": ["vite/client"]
+    "types": ["vite/client", "vitest/globals"]
   },
 
   // ===========================================================================
@@ -140,7 +140,7 @@
   // include: Which files to type check
   // - src: All source code
   // - vite.config.ts: Vite configuration (if using TypeScript config)
-  "include": ["src", "vite.config.ts"],
+  "include": ["src"],
   
   // exclude: Which files to skip (even if matched by include)
   // node_modules is excluded by default, but we're explicit here
@@ -149,6 +149,6 @@
   // ===========================================================================
   // REFERENCES (for project references if needed)
   // ===========================================================================
-  // Uncomment if using TypeScript project references for monorepo setup
-  // "references": [{ "path": "./tsconfig.node.json" }]
+  // Reference tsconfig.node.json for vite and vitest config files
+  "references": [{ "path": "./tsconfig.node.json" }]
 }
