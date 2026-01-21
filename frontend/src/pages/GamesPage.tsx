@@ -191,7 +191,7 @@ function GamesPage(): JSX.Element {
 
   /**
    * Handle clicking on a game card.
-   * For now, shows an alert. Later, this would navigate to the game.
+   * Navigates to the game play page for enabled games.
    */
   const handleGameClick = (game: Game): void => {
     if (!game.enabled) {
@@ -199,9 +199,8 @@ function GamesPage(): JSX.Element {
       return;
     }
 
-    // TODO: Navigate to the actual game page
-    // navigate(`/games/${game.id}`);
-    alert(`${game.name} will be available soon! Your teammates are building it.`);
+    // Navigate to the game play page
+    navigate(`/games/${game.id}`);
   };
 
   /**
@@ -430,9 +429,9 @@ function GamesPage(): JSX.Element {
           =================================================================== */}
       <footer className="games-footer">
         <p>
-          Casino Capstone &copy; {new Date().getFullYear()} | 
-          Built with React, Go, and PostgreSQL |
-          For educational purposes only
+          UMGC CS Capstone - Group E - Spring 2026 &copy; {new Date().getFullYear()} | 
+          Built with Python, React, Go, and PostgreSQL |
+          
         </p>
       </footer>
     </div>

@@ -27,6 +27,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import GamesPage from './pages/GamesPage';
+import GamePlayPage from './pages/GamePlayPage';
 
 // Import styles
 import './styles/App.css';
@@ -372,19 +373,31 @@ function App(): JSX.Element {
             } 
           />
           
-          {/* 
-          Games route - Protected (redirects to /login if not authenticated) 
+          {/*
+          Games route - Protected (redirects to /login if not authenticated)
           */}
-          <Route 
-            path="/games" 
+          <Route
+            path="/games"
             element={
               <ProtectedRoute>
                 <GamesPage />
               </ProtectedRoute>
-            } 
+            }
           />
-          
-          {/* 
+
+          {/*
+          Game Play route - Protected (play a specific game)
+          */}
+          <Route
+            path="/games/:gameId"
+            element={
+              <ProtectedRoute>
+                <GamePlayPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/*
           Catch-all route - Redirect unknown paths to home 
           This handles 404s by redirecting to the appropriate page.
           You could also render a custom 404 page here.

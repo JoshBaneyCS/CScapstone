@@ -66,10 +66,14 @@ metadata:
     # Proxy body size limit (for file uploads if needed)
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     
-    # Proxy timeouts
+    # Proxy timeouts (increased for WebSocket connections)
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+
+    # WebSocket support for game service
+    nginx.ingress.kubernetes.io/websocket-services: "game-service"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
     
     # Enable CORS (if not handled by backend)
     # nginx.ingress.kubernetes.io/enable-cors: "true"
@@ -140,7 +144,17 @@ spec:
                 name: backend
                 port:
                   number: 8080
-          
+
+          # WebSocket game connections → Game Service
+          # Handles real-time game streaming via WebSocket
+          - path: /ws/game
+            pathType: Prefix
+            backend:
+              service:
+                name: game-service
+                port:
+                  number: 8000
+
           # All other routes → Frontend service
           # React Router handles client-side routing
           - path: /
@@ -163,7 +177,7 @@ spec:
                 name: backend
                 port:
                   number: 8080
-          
+
           - path: /health
             pathType: Exact
             backend:
@@ -171,7 +185,15 @@ spec:
                 name: backend
                 port:
                   number: 8080
-          
+
+          - path: /ws/game
+            pathType: Prefix
+            backend:
+              service:
+                name: game-service
+                port:
+                  number: 8000
+
           - path: /
             pathType: Prefix
             backend:

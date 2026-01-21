@@ -114,6 +114,8 @@ func main() {
 	// Create the handlers with all dependencies
 	authHandler := handlers.NewAuthHandler(database, jwtService)
 	gamesHandler := handlers.NewGamesHandler()
+	gameSessionHandler := handlers.NewGameSessionHandler(database)
+	internalHandler := handlers.NewInternalHandler(database)
 
 	// -------------------------------------------------------------------------
 	// STEP 5: Set Up Router and Middleware
@@ -233,6 +235,33 @@ func main() {
 			// Get list of available games
 			// GET /api/games
 			r.Get("/", gamesHandler.ListGames)
+
+			// Start a new game session
+			// POST /api/games/start
+			r.Post("/start", gameSessionHandler.StartGame)
+
+			// Get current active session
+			// GET /api/games/session
+			r.Get("/session", gameSessionHandler.GetActiveSession)
+
+			// Abandon current game session
+			// POST /api/games/session/abandon
+			r.Post("/session/abandon", gameSessionHandler.AbandonSession)
+		})
+
+		// ----- Internal API Routes (for game services) -----
+		// These endpoints are used by Python game services
+		r.Route("/internal", func(r chi.Router) {
+			// Apply internal auth middleware
+			r.Use(handlers.InternalAuthMiddleware)
+
+			// Get session details for validation
+			// GET /api/internal/sessions/{sessionId}
+			r.Get("/sessions/{sessionId}", internalHandler.GetSession)
+
+			// Complete a game session and update bankroll
+			// POST /api/internal/sessions/{sessionId}/complete
+			r.Post("/sessions/{sessionId}/complete", internalHandler.CompleteSession)
 		})
 	})
 

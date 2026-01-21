@@ -111,7 +111,7 @@
     // -------------------------------------------------------------------------
     
     // baseUrl: Base directory for resolving non-relative imports
-    "baseUrl": ".",
+    "baseUrl": "capstone-groupe.com",
     
     // paths: Path aliases for cleaner imports
     // Instead of: import { Button } from '../../../components/Button'

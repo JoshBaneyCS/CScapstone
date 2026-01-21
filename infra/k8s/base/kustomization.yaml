@@ -88,7 +88,14 @@ resources:
   # Frontend
   - frontend/deployment.yaml
   - frontend/service.yaml
-  
+
+  # Game Service (Python game servers)
+  - game-service/secret.yaml
+  - game-service/configmap.yaml
+  - game-service/deployment.yaml
+  - game-service/service.yaml
+  - game-service/hpa.yaml
+
   # Ingress (external access)
   - ingress/ingress.yaml
 
@@ -106,12 +113,17 @@ images:
   - name: casino-backend
     newName: casino-backend
     newTag: latest
-  
+
   # Frontend image
   - name: casino-frontend
     newName: casino-frontend
     newTag: latest
-  
+
+  # Game Service image (Python game servers)
+  - name: casino-game-service
+    newName: casino-game-service
+    newTag: latest
+
   # PostgreSQL image (optional - pin to specific version)
   - name: postgres
     newName: postgres

@@ -1,0 +1,30 @@
+# =============================================================================
+# GAME-SERVICE CONFIGMAP
+# =============================================================================
+# Configuration for the Python game service.
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: game-service-config
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: game-service
+    app.kubernetes.io/component: game-engine
+    app.kubernetes.io/part-of: casino-capstone
+data:
+  # Frontend URL for CORS configuration
+  frontend-url: "https://umgcgroupe.com"
+
+  # Target frame rate for game streaming (FPS)
+  frame-rate: "30"
+
+  # Maximum concurrent game sessions per pod
+  max-sessions-per-pod: "50"
+
+  # Frame encoding format (png or jpeg)
+  frame-format: "jpeg"
+
+  # JPEG quality (if using jpeg format, 0-100)
+  jpeg-quality: "85"

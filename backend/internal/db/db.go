@@ -1,287 +1,165 @@
 // =============================================================================
-// CONFIG.GO - APPLICATION CONFIGURATION
+// DB.GO - DATABASE CONNECTION AND MANAGEMENT
 // =============================================================================
-// This package handles loading and validating configuration from environment
-// variables. Using environment variables for configuration follows the
-// 12-factor app methodology (https://12factor.net/config) and allows the
-// same code to run in different environments (dev, staging, production)
-// without code changes.
+// This package handles PostgreSQL database connections using pgx, a pure Go
+// driver for PostgreSQL. pgx provides better performance than the standard
+// database/sql with the pq driver and has native support for PostgreSQL types.
 //
-// Configuration is loaded once at startup and passed to components that need it.
-// This is better than reading env vars throughout the code because:
-//   1. All config is validated upfront - fail fast if something is missing
-//   2. Easy to see all configuration in one place
-//   3. Easy to test by passing mock config
-//   4. Type safety - convert strings to proper types once
+// The Database struct wraps a connection pool (pgxpool.Pool) which:
+//   - Manages multiple connections efficiently
+//   - Handles connection reuse and health checking
+//   - Provides thread-safe concurrent access
 //
 // Usage:
-//   cfg, err := config.Load()
+//   db, err := db.Connect(cfg.DatabaseURL)
 //   if err != nil {
 //       log.Fatal(err)
 //   }
-//   // Use cfg.DatabaseURL, cfg.JWTSecret, etc.
+//   defer db.Close()
+//
+//   // Run migrations
+//   if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
+//       log.Fatal(err)
+//   }
 // =============================================================================
 
-package config
+package db
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"os"
-	"strings"
+	"time"
 
-	// godotenv loads .env files into environment variables
-	// This is only used for local development - in production,
-	// environment variables are set by the deployment platform
-	"github.com/joho/godotenv"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // =============================================================================
-// CONFIG STRUCT
+// DATABASE STRUCT
 // =============================================================================
-// Config holds all configuration values for the application.
-// Each field is documented with its purpose and expected format.
+// Database wraps a pgxpool.Pool to provide database operations.
+// The pool manages connections automatically and is safe for concurrent use.
 
-type Config struct {
-	// -------------------------------------------------------------------------
-	// Database Configuration
-	// -------------------------------------------------------------------------
-
-	// DatabaseURL is the PostgreSQL connection string
-	// Format: postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=disable
-	// Example: postgres://casino_admin:secret@localhost:5432/casino_db?sslmode=disable
-	//
-	// Components:
-	//   - USER: Database username
-	//   - PASSWORD: Database password (URL-encoded if it contains special chars)
-	//   - HOST: Database server hostname (use "db" in Docker, "localhost" otherwise)
-	//   - PORT: PostgreSQL port (default 5432)
-	//   - DATABASE: Name of the database
-	//   - sslmode: SSL mode (disable for local dev, require for production)
-	DatabaseURL string
-
-	// -------------------------------------------------------------------------
-	// Authentication Configuration
-	// -------------------------------------------------------------------------
-
-	// JWTSecret is the secret key used to sign and verify JWT tokens
-	// SECURITY: This must be kept secret! Anyone with this key can forge tokens.
-	//
-	// Requirements:
-	//   - At least 32 characters for security
-	//   - Random, unpredictable value
-	//   - Different for each environment (dev, staging, prod)
-	//
-	// Generate a secure secret with: openssl rand -base64 32
-	JWTSecret string
-
-	// CookieSecure determines if cookies should only be sent over HTTPS
-	// - false: Cookies work over HTTP (required for local development)
-	// - true: Cookies only sent over HTTPS (required for production)
-	//
-	// SECURITY: Always set to true in production! Setting to false in production
-	// allows cookies to be intercepted over unencrypted connections.
-	CookieSecure bool
-
-	// -------------------------------------------------------------------------
-	// Server Configuration
-	// -------------------------------------------------------------------------
-
-	// APIPort is the port the HTTP server listens on
-	// Default: 8080
-	// This should match the port exposed in Docker and docker-compose
-	APIPort string
-
-	// FrontendURL is the URL of the frontend application
-	// Used for CORS configuration to allow the frontend to make requests
-	// Example: http://localhost:5173 (Vite default) or https://casino.example.com
-	//
-	// IMPORTANT: This must be set correctly for cookies to work!
-	// The browser will only send cookies to the API if CORS is configured
-	// to allow the frontend origin with credentials.
-	FrontendURL string
+type Database struct {
+	// Pool is the connection pool for PostgreSQL
+	// It's exported so handlers can access it directly for complex queries
+	Pool *pgxpool.Pool
 }
 
 // =============================================================================
-// LOAD FUNCTION
+// CONNECT FUNCTION
 // =============================================================================
-// Load reads configuration from environment variables and returns a Config struct.
-// It attempts to load a .env file first (for local development), then reads
-// from actual environment variables.
-//
-// Returns an error if any required configuration is missing or invalid.
-
-func Load() (*Config, error) {
-	// -------------------------------------------------------------------------
-	// Load .env file (optional, for local development)
-	// -------------------------------------------------------------------------
-	// godotenv.Load() reads a .env file and sets environment variables.
-	// We ignore the error because:
-	//   1. In production, there's no .env file - env vars are set directly
-	//   2. In development, if .env is missing, we'll catch it when checking required vars
-	//
-	// The .env file should be in the working directory (project root or backend/)
-
-	// Try to load .env from current directory
-	_ = godotenv.Load()
-
-	// Also try to load from parent directory (when running from backend/)
-	_ = godotenv.Load("../.env")
-
-	// -------------------------------------------------------------------------
-	// Read Environment Variables
-	// -------------------------------------------------------------------------
-	// getEnv is a helper that reads an env var with a default fallback
-	// getEnvRequired is for vars that must be set (no default)
-
-	// Database URL - REQUIRED, no sensible default
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		return nil, errors.New("DATABASE_URL environment variable is required")
-	}
-
-	// JWT Secret - REQUIRED, no sensible default (security critical)
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		return nil, errors.New("JWT_SECRET environment variable is required")
-	}
-
-	// Validate JWT secret length for security
-	// Short secrets are vulnerable to brute-force attacks
-	if len(jwtSecret) < 16 {
-		return nil, errors.New("JWT_SECRET must be at least 16 characters for security")
-	}
-
-	// API Port - Optional, defaults to 8080
-	apiPort := getEnvWithDefault("API_PORT", "8080")
-
-	// Cookie Secure flag - Optional, defaults to false for local dev
-	// Accepts: "true", "false", "1", "0", "yes", "no"
-	cookieSecure := parseEnvBool("COOKIE_SECURE", false)
-
-	// Frontend URL - Optional, defaults to Vite's default dev URL
-	frontendURL := getEnvWithDefault("FRONTEND_URL", "http://localhost:5173")
-
-	// Validate frontend URL format
-	if !strings.HasPrefix(frontendURL, "http://") && !strings.HasPrefix(frontendURL, "https://") {
-		return nil, fmt.Errorf("FRONTEND_URL must start with http:// or https://, got: %s", frontendURL)
-	}
-
-	// -------------------------------------------------------------------------
-	// Create and Return Config
-	// -------------------------------------------------------------------------
-
-	config := &Config{
-		DatabaseURL:  databaseURL,
-		JWTSecret:    jwtSecret,
-		CookieSecure: cookieSecure,
-		APIPort:      apiPort,
-		FrontendURL:  frontendURL,
-	}
-
-	return config, nil
-}
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-// getEnvWithDefault reads an environment variable and returns a default value
-// if the variable is not set or is empty.
+// Connect establishes a connection pool to the PostgreSQL database.
+// It validates the connection by pinging the database before returning.
 //
 // Parameters:
-//   - key: The name of the environment variable
-//   - defaultValue: The value to return if the env var is not set
+//   - databaseURL: PostgreSQL connection string
+//     Format: postgres://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=disable
 //
 // Returns:
-//   - The environment variable value, or defaultValue if not set
-//
-// Example:
-//
-//	port := getEnvWithDefault("API_PORT", "8080")
-func getEnvWithDefault(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
+//   - *Database: Database wrapper with active connection pool
+//   - error: Connection error if unable to connect
+
+func Connect(databaseURL string) (*Database, error) {
+	// Create a context with timeout for the connection attempt
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Parse the connection string and create pool configuration
+	config, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
-	return value
+
+	// Configure the connection pool
+	// These settings balance resource usage with availability
+	config.MaxConns = 25                      // Maximum connections in the pool
+	config.MinConns = 5                       // Minimum connections kept open
+	config.MaxConnLifetime = 1 * time.Hour    // Maximum lifetime of a connection
+	config.MaxConnIdleTime = 30 * time.Minute // Close idle connections after this
+	config.HealthCheckPeriod = 1 * time.Minute
+
+	// Create the connection pool
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+
+	// Verify the connection by pinging the database
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return &Database{Pool: pool}, nil
 }
 
-// parseEnvBool reads an environment variable and parses it as a boolean.
-// Handles various common boolean representations.
+// =============================================================================
+// RUN MIGRATIONS
+// =============================================================================
+// RunMigrations applies all pending database migrations from the migrations
+// directory. Migrations are versioned SQL files that evolve the database schema.
 //
-// Truthy values (case-insensitive): "true", "1", "yes", "on"
-// Falsy values (case-insensitive): "false", "0", "no", "off", ""
+// Migration files should be in: backend/migrations/
+//   - XXXXXX_description.up.sql   (apply migration)
+//   - XXXXXX_description.down.sql (rollback migration)
 //
 // Parameters:
-//   - key: The name of the environment variable
-//   - defaultValue: The value to return if the env var is not set or unrecognized
+//   - databaseURL: PostgreSQL connection string
 //
 // Returns:
-//   - The parsed boolean value, or defaultValue if not set/unrecognized
-//
-// Example:
-//
-//	secure := parseEnvBool("COOKIE_SECURE", false)
-func parseEnvBool(key string, defaultValue bool) bool {
-	value := os.Getenv(key)
+//   - error: Migration error if migrations fail
 
-	// If not set, return default
-	if value == "" {
-		return defaultValue
+func RunMigrations(databaseURL string) error {
+	// Create a new migrate instance
+	// Source: file path to migrations directory
+	// Database: PostgreSQL connection string
+	m, err := migrate.New(
+		"file://migrations",
+		databaseURL,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
+	defer m.Close()
 
-	// Normalize to lowercase for comparison
-	value = strings.ToLower(strings.TrimSpace(value))
-
-	// Check for truthy values
-	switch value {
-	case "true", "1", "yes", "on":
-		return true
-	case "false", "0", "no", "off":
-		return false
-	default:
-		// Unrecognized value, return default
-		return defaultValue
-	}
-}
-
-// =============================================================================
-// VALIDATION HELPERS (for future use)
-// =============================================================================
-
-// ValidateProductionConfig performs additional validation for production deployments.
-// Call this when deploying to staging or production to catch common misconfigurations.
-//
-// This is not called automatically - it's available for production deployment scripts
-// to use as an additional safety check.
-func (c *Config) ValidateProductionConfig() error {
-	var errs []string
-
-	// In production, cookies MUST be secure (HTTPS only)
-	if !c.CookieSecure {
-		errs = append(errs, "COOKIE_SECURE should be true in production")
-	}
-
-	// In production, frontend URL should use HTTPS
-	if !strings.HasPrefix(c.FrontendURL, "https://") {
-		errs = append(errs, "FRONTEND_URL should use HTTPS in production")
-	}
-
-	// JWT secret should be longer in production
-	if len(c.JWTSecret) < 32 {
-		errs = append(errs, "JWT_SECRET should be at least 32 characters in production")
-	}
-
-	// Database should use SSL in production
-	if !strings.Contains(c.DatabaseURL, "sslmode=require") &&
-		!strings.Contains(c.DatabaseURL, "sslmode=verify") {
-		errs = append(errs, "DATABASE_URL should use sslmode=require or sslmode=verify-full in production")
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("production configuration warnings:\n  - %s", strings.Join(errs, "\n  - "))
+	// Apply all pending migrations
+	// Up() applies all available migrations that haven't been run yet
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	return nil
+}
+
+// =============================================================================
+// CLOSE METHOD
+// =============================================================================
+// Close gracefully shuts down the database connection pool.
+// Should be called when the application shuts down (typically via defer).
+//
+// This releases all database connections back to the PostgreSQL server.
+
+func (d *Database) Close() {
+	if d.Pool != nil {
+		d.Pool.Close()
+	}
+}
+
+// =============================================================================
+// HELPER METHODS
+// =============================================================================
+
+// Ping checks if the database connection is still alive.
+// Useful for health check endpoints.
+func (d *Database) Ping(ctx context.Context) error {
+	return d.Pool.Ping(ctx)
+}
+
+// Stats returns connection pool statistics.
+// Useful for monitoring and debugging.
+func (d *Database) Stats() *pgxpool.Stat {
+	return d.Pool.Stat()
 }

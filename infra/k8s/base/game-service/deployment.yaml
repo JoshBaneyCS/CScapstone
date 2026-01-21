@@ -1,0 +1,144 @@
+# =============================================================================
+# GAME-SERVICE DEPLOYMENT
+# =============================================================================
+# This deployment runs the Python game service(s) that handle:
+#   - WebSocket connections for game streaming
+#   - Pygame game execution (headless)
+#   - Frame encoding and streaming to clients
+#
+# The actual game implementation is provided by other team members.
+# This manifest provides the infrastructure for running their games.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: game-service
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: game-service
+    app.kubernetes.io/component: game-engine
+    app.kubernetes.io/part-of: casino-capstone
+spec:
+  # Start with 2 replicas for availability
+  # HPA will scale based on load
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: game-service
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+
+  template:
+    metadata:
+      labels:
+        app: game-service
+        app.kubernetes.io/name: game-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: game-service
+          # Image will be provided by game developers
+          # This is a placeholder - update with actual image
+          image: casino-game-service:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          env:
+            # Backend URL for session validation and result reporting
+            - name: GO_BACKEND_URL
+              value: "http://backend:8080"
+
+            # Frontend URL for CORS
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: game-service-config
+                  key: frontend-url
+
+            # Internal authentication key (shared with Go backend)
+            - name: INTERNAL_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: internal-auth-secret
+                  key: key
+
+            # Pygame headless configuration
+            - name: SDL_VIDEODRIVER
+              value: "dummy"
+            - name: SDL_AUDIODRIVER
+              value: "dummy"
+
+            # Frame streaming configuration
+            - name: FRAME_RATE
+              valueFrom:
+                configMapKeyRef:
+                  name: game-service-config
+                  key: frame-rate
+
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+
+          # Liveness probe - is the container alive?
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness probe - is the container ready for traffic?
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # Startup probe - give time for initial startup
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Pygame may need writable /tmp
+            capabilities:
+              drop:
+                - ALL
+
+      # Graceful shutdown for WebSocket connections
+      terminationGracePeriodSeconds: 60
