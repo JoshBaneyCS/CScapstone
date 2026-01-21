@@ -6,10 +6,10 @@
 
 ## Overview
 
-*This capstone project focuses on the development of a web-based singleplayer casino gaming application designed to simulate real-world casino gameplay while demonstrating core computer science principles. The application will allow users to securely register and authenticate through a login system, select from available casino games, and play using a virtual bankroll that is tracked across sessions. The initial release of the system will support two popular card games: Blackjack and Poker.
+This capstone project focuses on the development of a web-based singleplayer casino gaming application designed to simulate real-world casino gameplay while demonstrating core computer science principles. The application will allow users to securely register and authenticate through a login system, select from available casino games, and play using a virtual bankroll that is tracked across sessions. The initial release of the system will support two popular card games: Blackjack and Poker.
 The primary objective of this project is to design and implement a full-stack web application that integrates backend game logic, user authentication, database-driven state management, and modern deployment practices. Each user will begin with a predefined starting bankroll, and all wagers, wins, and losses will be persistently stored in a relational database. The system will validate user credentials and ensure proper session management to maintain data integrity and security.
 In addition to application functionality, this project emphasizes real-world software engineering practices. The application will be deployed on self-hosted infrastructure using containerization and orchestration technologies. Continuous integration and continuous deployment (CI/CD) pipelines will be implemented to automate testing and deployment. By completing this project, the team aims to demonstrate proficiency in web development, backend programming, database management, and DevOps methodologies, while delivering a functional and extensible casino simulation platform.
-*
+
 
 ## Features
 
