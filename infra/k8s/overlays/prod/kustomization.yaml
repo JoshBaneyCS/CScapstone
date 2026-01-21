@@ -9,7 +9,7 @@
 #   - Multiple replicas for high availability
 #   - HTTPS required (COOKIE_SECURE=true)
 #   - Info-level logging (not debug)
-#   - Real domain: umgcgroupe.com
+#   - Real domain: capstone-groupe.com
 #   - TLS certificates enabled
 #   - HPA and PDB enabled
 #   - 30GB PVC for database
@@ -62,7 +62,7 @@ commonLabels:
 
 commonAnnotations:
   environment: production
-  description: "Production deployment of Casino Capstone on umgcgroupe.com"
+  description: "Production deployment of Casino Capstone on capstone-groupe.com"
 
 # =============================================================================
 # IMAGES
@@ -75,12 +75,17 @@ images:
   - name: casino-backend
     newName: ghcr.io/joshbaneycs/cscapstone/backend  # GitHub Container Registry
     newTag: v1.0.0  # Update this in CI/CD
-  
+
   # Frontend - use specific version tag
   - name: casino-frontend
     newName: ghcr.io/joshbaneycs/cscapstone/frontend
     newTag: v1.0.0  # Update this in CI/CD
-  
+
+  # Game Service - use specific version tag
+  - name: casino-game-service
+    newName: ghcr.io/joshbaneycs/cscapstone/game-service
+    newTag: v1.0.0  # Update this in CI/CD
+
   # PostgreSQL - pin to specific version
   - name: postgres
     newName: postgres
@@ -107,10 +112,10 @@ configMapGenerator:
       - COOKIE_SECURE=true
       
       # Frontend URL for CORS (production domain)
-      - FRONTEND_URL=https://umgcgroupe.com
+      - FRONTEND_URL=https://capstone-groupe.com
       
       # Additional CORS origins
-      - CORS_ALLOWED_ORIGINS=https://umgcgroupe.com,https://www.umgcgroupe.com
+      - CORS_ALLOWED_ORIGINS=https://capstone-groupe.com,https://www.capstone-groupe.com
       
       # Feature flags - disable debug endpoints
       - DEBUG_ENDPOINTS_ENABLED=false
@@ -268,11 +273,12 @@ patches:
       spec:
         tls:
           - hosts:
-              - umgcgroupe.com
-              - www.umgcgroupe.com
+              - capstone-groupe.com
+              - www.capstone-groupe.com
+              - api.capstone-groupe.com
             secretName: casino-tls-secret
         rules:
-          - host: umgcgroupe.com
+          - host: capstone-groupe.com
             http:
               paths:
                 - path: /api
@@ -289,6 +295,13 @@ patches:
                       name: backend
                       port:
                         number: 8080
+                - path: /ws/game
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: game-service
+                      port:
+                        number: 8000
                 - path: /
                   pathType: Prefix
                   backend:
@@ -296,7 +309,7 @@ patches:
                       name: frontend
                       port:
                         number: 80
-          - host: www.umgcgroupe.com
+          - host: www.capstone-groupe.com
             http:
               paths:
                 - path: /api
@@ -313,6 +326,13 @@ patches:
                       name: backend
                       port:
                         number: 8080
+                - path: /ws/game
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: game-service
+                      port:
+                        number: 8000
                 - path: /
                   pathType: Prefix
                   backend:
@@ -320,6 +340,16 @@ patches:
                       name: frontend
                       port:
                         number: 80
+          - host: api.capstone-groupe.com
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: backend
+                      port:
+                        number: 8080
     target:
       kind: Ingress
       name: casino-ingress
@@ -444,7 +474,7 @@ patches:
 # [ ] Update image tags to specific versions (not :latest)
 # [ ] Verify secrets are properly configured (use external secret management)
 # [ ] Ensure TLS certificates are valid
-# [ ] Configure DNS records for umgcgroupe.com
+# [ ] Configure DNS records for capstone-groupe.com
 # [ ] Set up monitoring and alerting
 # [ ] Configure log aggregation
 # [ ] Test backup and restore procedures
@@ -456,8 +486,8 @@ patches:
 # DNS Configuration:
 # ------------------
 # Add these records pointing to your cluster's external IP/LB:
-#   A     umgcgroupe.com       <external-ip>
-#   A     www.umgcgroupe.com   <external-ip>
+#   A     capstone-groupe.com       <external-ip>
+#   A     www.capstone-groupe.com   <external-ip>
 #
 #
 # TLS Certificate Setup (cert-manager):

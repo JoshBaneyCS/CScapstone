@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/part-of: casino-capstone
 data:
   # Frontend URL for CORS configuration
-  frontend-url: "https://umgcgroupe.com"
+  frontend-url: "https://capstone-groupe.com"
 
   # Target frame rate for game streaming (FPS)
   frame-rate: "30"

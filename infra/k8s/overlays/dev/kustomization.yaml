@@ -44,10 +44,9 @@ resources:
 # =============================================================================
 # NAMESPACE
 # =============================================================================
-# Use the same namespace as base (casino)
-# Uncomment to use a different namespace for dev
+# Use separate namespace for dev environment
 
-# namespace: casino-dev
+namespace: casino-dev
 
 # =============================================================================
 # NAME PREFIX/SUFFIX (Optional)
@@ -72,7 +71,7 @@ commonLabels:
 
 commonAnnotations:
   environment: development
-  description: "Development deployment of Casino Capstone"
+  description: "Development deployment of Casino Capstone on dev.capstone-groupe.com"
 
 # =============================================================================
 # IMAGES
@@ -84,9 +83,13 @@ images:
   - name: casino-backend
     newName: casino-backend
     newTag: dev
-  
+
   - name: casino-frontend
     newName: casino-frontend
+    newTag: dev
+
+  - name: casino-game-service
+    newName: casino-game-service
     newTag: dev
 
 # =============================================================================
@@ -110,7 +113,7 @@ configMapGenerator:
       - COOKIE_SECURE=false
       
       # Frontend URL for CORS
-      - FRONTEND_URL=http://localhost:5173
+      - FRONTEND_URL=https://dev.capstone-groupe.com
       
       # Feature flags - enable debug endpoints
       - DEBUG_ENDPOINTS_ENABLED=true
@@ -259,9 +262,9 @@ patches:
       name: postgres-pvc
 
 # =============================================================================
-# PATCHES - INGRESS FOR LOCAL DEVELOPMENT
+# PATCHES - INGRESS FOR DEVELOPMENT
 # =============================================================================
-# Modify ingress for local development (localhost, no TLS)
+# Modify ingress for dev environment with dev.capstone-groupe.com
 
   - patch: |-
       apiVersion: networking.k8s.io/v1
@@ -269,12 +272,16 @@ patches:
       metadata:
         name: casino-ingress
         annotations:
-          nginx.ingress.kubernetes.io/ssl-redirect: "false"
-          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          cert-manager.io/cluster-issuer: "letsencrypt-staging"
       spec:
-        tls: []  # Remove TLS for local dev
+        tls:
+          - hosts:
+              - dev.capstone-groupe.com
+            secretName: casino-dev-tls-secret
         rules:
-          - host: localhost
+          - host: dev.capstone-groupe.com
             http:
               paths:
                 - path: /api
@@ -291,30 +298,13 @@ patches:
                       name: backend
                       port:
                         number: 8080
-                - path: /
+                - path: /ws/game
                   pathType: Prefix
                   backend:
                     service:
-                      name: frontend
+                      name: game-service
                       port:
-                        number: 80
-          - host: umgcgroupe.com
-            http:
-              paths:
-                - path: /api
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
-                - path: /health
-                  pathType: Exact
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
+                        number: 8000
                 - path: /
                   pathType: Prefix
                   backend:
@@ -397,8 +387,8 @@ patches:
 # Local /etc/hosts:
 # -----------------
 # Add to /etc/hosts for domain testing:
-#   127.0.0.1 umgcgroupe.com
-#   127.0.0.1 www.umgcgroupe.com
+#   127.0.0.1 dev.capstone-groupe.com
+#   127.0.0.1 www.dev.capstone-groupe.com
 #
 #
 # Port Forward (Alternative to Ingress):

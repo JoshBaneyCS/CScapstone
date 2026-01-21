@@ -8,16 +8,17 @@
 #   - Name-based virtual hosting
 #   - Load balancing
 #
-# Domain: umgcgroupe.com
-# ----------------------
-# This Ingress routes traffic for umgcgroupe.com to the casino application:
-#   - umgcgroupe.com/* → Frontend (React app)
-#   - umgcgroupe.com/api/* → Backend (Go API)
+# Domain: capstone-groupe.com
+# ---------------------------
+# This Ingress routes traffic for capstone-groupe.com to the casino application:
+#   - capstone-groupe.com/* → Frontend (React app)
+#   - capstone-groupe.com/api/* → Backend (Go API)
+#   - api.capstone-groupe.com/* → Backend (Go API) - direct API access
 #
 # Prerequisites:
 # --------------
 # 1. Ingress Controller (nginx-ingress, traefik, etc.) must be installed
-# 2. DNS must point umgcgroupe.com to your cluster's external IP
+# 2. DNS must point capstone-groupe.com to your cluster's external IP
 # 3. For TLS: cert-manager or manual certificate
 #
 # Installing NGINX Ingress Controller:
@@ -77,7 +78,7 @@ metadata:
     
     # Enable CORS (if not handled by backend)
     # nginx.ingress.kubernetes.io/enable-cors: "true"
-    # nginx.ingress.kubernetes.io/cors-allow-origin: "https://umgcgroupe.com"
+    # nginx.ingress.kubernetes.io/cors-allow-origin: "https://capstone-groupe.com"
     # nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
     
     # Rate limiting (optional)
@@ -111,8 +112,9 @@ spec:
   
   tls:
     - hosts:
-        - umgcgroupe.com
-        - www.umgcgroupe.com
+        - capstone-groupe.com
+        - www.capstone-groupe.com
+        - api.capstone-groupe.com
       # Secret containing TLS certificate and key
       # Create with: kubectl create secret tls casino-tls --cert=cert.pem --key=key.pem -n casino
       # Or let cert-manager create it automatically
@@ -122,8 +124,8 @@ spec:
   # ROUTING RULES
   # ---------------------------------------------------------------------------
   rules:
-    # Main domain: umgcgroupe.com
-    - host: umgcgroupe.com
+    # Main domain: capstone-groupe.com
+    - host: capstone-groupe.com
       http:
         paths:
           # API routes → Backend service
@@ -165,9 +167,9 @@ spec:
                 port:
                   number: 80
     
-    # WWW subdomain: www.umgcgroupe.com
+    # WWW subdomain: www.capstone-groupe.com
     # Same routing as main domain
-    - host: www.umgcgroupe.com
+    - host: www.capstone-groupe.com
       http:
         paths:
           - path: /api
@@ -202,6 +204,19 @@ spec:
                 port:
                   number: 80
 
+    # API subdomain: api.capstone-groupe.com
+    # Direct access to backend API without /api prefix
+    - host: api.capstone-groupe.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+
 ---
 # =============================================================================
 # TLS CERTIFICATE SECRET (Manual Creation)
@@ -218,7 +233,7 @@ spec:
 # For local development, you can generate a self-signed certificate:
 #   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 #     -keyout tls.key -out tls.crt \
-#     -subj "/CN=umgcgroupe.com"
+#     -subj "/CN=capstone-groupe.com"
 #   kubectl create secret tls casino-tls-secret --cert=tls.crt --key=tls.key -n casino
 # =============================================================================
 
@@ -255,7 +270,7 @@ spec:
 #     # Let's Encrypt production server
 #     server: https://acme-v02.api.letsencrypt.org/directory
 #     # Email for certificate notifications
-#     email: admin@umgcgroupe.com
+#     email: admin@capstone-groupe.com
 #     # Secret to store the ACME account private key
 #     privateKeySecretRef:
 #       name: letsencrypt-prod-account-key
@@ -271,8 +286,8 @@ spec:
 # =============================================================================
 # For local development without a real domain, you can use localhost
 # or add entries to /etc/hosts:
-#   127.0.0.1 umgcgroupe.com
-#   127.0.0.1 www.umgcgroupe.com
+#   127.0.0.1 capstone-groupe.com
+#   127.0.0.1 www.capstone-groupe.com
 #
 # Then access via minikube tunnel or port-forward.
 # =============================================================================
@@ -334,11 +349,11 @@ spec:
 # DNS Configuration:
 # ------------------
 # Add these DNS records pointing to your cluster's external IP:
-#   A     umgcgroupe.com      <cluster-external-ip>
-#   A     www.umgcgroupe.com  <cluster-external-ip>
+#   A     capstone-groupe.com      <cluster-external-ip>
+#   A     www.capstone-groupe.com  <cluster-external-ip>
 #
 # Or use CNAME if you have a load balancer hostname:
-#   CNAME umgcgroupe.com      <load-balancer-hostname>
+#   CNAME capstone-groupe.com      <load-balancer-hostname>
 #
 #
 # Get External IP:
@@ -353,12 +368,12 @@ spec:
 #
 # Testing:
 # --------
-# curl -H "Host: umgcgroupe.com" http://<external-ip>/
-# curl -H "Host: umgcgroupe.com" http://<external-ip>/api/health
+# curl -H "Host: capstone-groupe.com" http://<external-ip>/
+# curl -H "Host: capstone-groupe.com" http://<external-ip>/api/health
 #
 # With /etc/hosts entry:
-# curl https://umgcgroupe.com/
-# curl https://umgcgroupe.com/api/health
+# curl https://capstone-groupe.com/
+# curl https://capstone-groupe.com/api/health
 #
 #
 # Troubleshooting:

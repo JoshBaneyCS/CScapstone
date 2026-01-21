@@ -215,7 +215,7 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: casino  # Or casino-dev for separate namespace
+    namespace: casino-dev
 
   syncPolicy:
     automated:
@@ -240,6 +240,67 @@ spec:
         - /spec/replicas
 
   revisionHistoryLimit: 5
+
+---
+# =============================================================================
+# STAGING APPLICATION
+# =============================================================================
+# Separate Application for staging environment
+# Uses the staging overlay - a pre-production testing environment
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: casino-capstone-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: casino-capstone
+    environment: staging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/JoshBaneyCS/CScapstone.git
+    targetRevision: staging  # Use staging branch
+    path: infra/k8s/overlays/staging
+
+    kustomize:
+      images:
+        - casino-backend:staging
+        - casino-frontend:staging
+        - casino-game-service:staging
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: casino-staging
+
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - ServerSideApply=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 2m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+  revisionHistoryLimit: 10
 
 ---
 # =============================================================================

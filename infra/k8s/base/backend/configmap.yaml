@@ -57,7 +57,7 @@ data:
   FRONTEND_URL: "http://localhost:5173"
   
   # Additional allowed origins (comma-separated)
-  # CORS_ALLOWED_ORIGINS: "https://umgcgroupe.com,https://www.umgcgroupe.com"
+  # CORS_ALLOWED_ORIGINS: "https://capstone-groupe.com,https://www.capstone-groupe.com"
   
   # ===========================================================================
   # COOKIE CONFIGURATION
@@ -68,7 +68,7 @@ data:
   COOKIE_SECURE: "false"
   
   # Cookie domain (leave empty for current domain)
-  # COOKIE_DOMAIN: ".umgcgroupe.com"
+  # COOKIE_DOMAIN: ".capstone-groupe.com"
   
   # Session duration in hours
   SESSION_DURATION_HOURS: "24"
@@ -207,6 +207,6 @@ data:
 #         - APP_ENV=production
 #         - COOKIE_SECURE=true
 #         - LOG_LEVEL=info
-#         - FRONTEND_URL=https://umgcgroupe.com
+#         - FRONTEND_URL=https://capstone-groupe.com
 #
 # =============================================================================
