@@ -1,0 +1,24 @@
+# =============================================================================
+# POSTGRES SERVICE
+# =============================================================================
+# Exposes PostgreSQL to other pods in the cluster.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: casino-capstone
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP

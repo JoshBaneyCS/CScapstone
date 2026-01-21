@@ -75,9 +75,9 @@ resources:
   - namespace.yaml
   
   # PostgreSQL (database)
-  - postgres/secret.yaml
+  - postgres/secrets.yaml
   - postgres/pvc.yaml
-  - postgres/statefulset.yaml
+  - postgres/Statefulset.yaml
   - postgres/service.yaml
   
   # Backend API
