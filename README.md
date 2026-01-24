@@ -70,6 +70,11 @@ npm install
 
 ```
 
+## System Architecture
+
+![System Architecture Diagram](docs/architecture.svg)
+
+
 ## Team
 
 | Name | Role | Contact |
