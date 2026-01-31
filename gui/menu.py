@@ -10,6 +10,7 @@ TODO:
 from enum import Enum
 import pygame
 import pygame_gui
+from pygame_gui.core import ObjectID
 
 ## Used by game to call upon specific scenes
 class SceneID(Enum):
@@ -21,7 +22,7 @@ class SceneID(Enum):
 class Scene:
     def __init__(self, game):
         self.game = game
-        self.ui_manager = pygame_gui.UIManager(self.game.GAME_RESOLUTION)
+        self.ui_manager = pygame_gui.UIManager(self.game.GAME_RESOLUTION, "theme.json")
         self.run_display = True
         ## TODO: reference, can delete once themes are implemented
         ##self.background = pygame.Surface(self.game.GAME_RESOLUTION)
@@ -31,7 +32,8 @@ class Scene:
         self.scene_container = pygame_gui.elements.UIPanel(
             relative_rect=pygame.Rect((0, 0), self.game.GAME_RESOLUTION),
             manager=self.ui_manager,
-            starting_height=0)
+            starting_height=0,
+            object_id=ObjectID(class_id='@screen_background'))
         self.scene_container.disable()
         self.scene_container.hide()
 
@@ -39,9 +41,11 @@ class Scene:
         ## TODO: replace text with gear icon, change background alpha to 0
         self.settings_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((1850, 50), (50, 50)),
-            text='Settings',
+            #text='Settings',
+            text='',
             manager=self.ui_manager,
-            container=self.scene_container)
+            container=self.scene_container,
+            object_id='#settings_button')
         self.settings_menu = pygame_gui.elements.UIPanel(
             relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 200, self.game.GAME_HALF_HEIGHT - 200), (400, 400)),
             manager=self.ui_manager,
@@ -63,7 +67,7 @@ class Scene:
         self.ui_manager.draw_ui(self.game.window)
         pygame.display.update()
 
-    ## Ensure you call handle_settings_events when implement this in the subclass
+    ## Ensure you call handle_settings_events when implementing in subclass
     def handle_events(self):
         """
         This method must be implemented by subclasses.
@@ -75,11 +79,14 @@ class Scene:
             case self.settings_button:
                 self.settings_menu.enable()
                 self.settings_menu.show()
+                return True
             case self.logout_button:
                 self.game.change_scene(SceneID.LOGIN_SCREEN)
+                return True
             case self.return_button:
                 self.settings_menu.disable()
                 self.settings_menu.hide()
+                return True
 
     def update(self, time_delta):
         self.ui_manager.update(time_delta)
@@ -100,22 +107,24 @@ class Scene:
 class LoginScreen(Scene):
     def __init__(self, game):
         Scene.__init__(self, game)
-        self.menu_background = pygame_gui.elements.UIPanel(
+        self.login_background = pygame_gui.elements.UIPanel(
             relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 250, self.game.GAME_HALF_HEIGHT - 200), (500, 400)),
             manager=self.ui_manager,
-            starting_height=0)
+            starting_height=0,
+            object_id=ObjectID(object_id='#login_background',class_id='@menu_background'))
         self.title_label = pygame_gui.elements.UILabel(
-            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 200), (150, 50)),
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 450, 200), (900, 120)),
             text=self.game.GAME_NAME,
             manager=self.ui_manager,
-            container=self.scene_container)
+            container=self.scene_container,
+            object_id='#title_label')
         self.login_label = pygame_gui.elements.UILabel(
-            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 100, 350), (200, 50)),
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 150, 325), (300, 100)),
             text='Please login to continue',
             manager=self.ui_manager,
             container=self.scene_container)
         self.username_textbox = pygame_gui.elements.UITextEntryLine(
-            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 50, 400), (100, 50)),
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 50, 450), (100, 50)),
             initial_text="Username",
             manager=self.ui_manager,
             container=self.scene_container)
@@ -147,19 +156,22 @@ class LoginScreen(Scene):
             if event.type == pygame.QUIT:
                 self.game.is_running, self.game.is_playing = False, False
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                match event.ui_element:
-                    case self.settings_button:
-                        self.settings_menu.enable()
-                        self.settings_menu.show()
-                    case self.logout_button:
-                        self.game.change_scene(SceneID.LOGIN_SCREEN)
-                    case self.return_button:
-                        self.settings_menu.disable()
-                        self.settings_menu.hide()
-                    case self.exit_button:
-                        self.game.is_running, self.game.is_playing = False, False
-                    case self.login_button:
-                        self.game.change_scene(SceneID.GAME_MENU)
+                if Scene.handle_settings_events(self, event):
+                        continue
+                else:
+                    match event.ui_element:
+                        case self.settings_button:
+                            self.settings_menu.enable()
+                            self.settings_menu.show()
+                        case self.logout_button:
+                            self.game.change_scene(SceneID.LOGIN_SCREEN)
+                        case self.return_button:
+                            self.settings_menu.disable()
+                            self.settings_menu.hide()
+                        case self.exit_button:
+                            self.game.is_running, self.game.is_playing = False, False
+                        case self.login_button:
+                            self.game.change_scene(SceneID.GAME_MENU)
             self.ui_manager.process_events(event)
 
 ## Lets the user choose between all available casino card games

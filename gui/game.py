@@ -9,10 +9,6 @@ class Game:
     GAME_HALF_WIDTH = GAME_WIDTH / 2
     GAME_HALF_HEIGHT = GAME_HEIGHT / 2
     GAME_RESOLUTION = (GAME_WIDTH, GAME_HEIGHT)
-    BACKGROUND_COLOR_DARK = pygame.Color('#001524')
-    BACKGROUND_COLOR_LIGHT = pygame.Color('#14616D')
-    ##TEXT_COLOR_LIGHT = pygame.Color('#FFECD1')
-    ##TEXT_COLOR_ERROR = pygame.Color('#FF7D00')
 
     def __init__(self):
         # ----- Pygame Setup -----

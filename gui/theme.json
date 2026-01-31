@@ -1,0 +1,146 @@
+{
+    "colors": {
+        "dark_background": "#001524"
+    },
+    "defaults": {
+        "colours": {
+            "normal_bg": "#001524",
+            "hovered_bg": "#14616D",
+            "disabled_bg": "#001524",
+            "selected_bg": "#FF7D00",
+            "active_bg": "#FF7D00",
+            "dark_bg": "#001524",
+            "normal_text": "#FFECD1",
+            "hovered_text": "#000000",
+            "selected_text": "#001524",
+            "disabled_text": "#14616D",
+            "active_text": "#001524",
+            "border": "#14616D"
+        }
+    },
+    "label": {
+        "font":
+        {
+            "name": "googlesans_regular",
+            "size": "20",
+            "bold" : "0",
+            "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        }
+    },
+    "button": {
+        "font":
+        {
+            "name": "googlesans_regular",
+            "size": "20",
+            "bold" : "0",
+            "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        },
+        "colours": {
+            "normal_bg": "#14616D",
+            "hovered_bg": "#FF7D00",
+            "active_bg": "#FFECD1",
+            "normal_text": "#FFECD1",
+            "active_text": "#001524"
+        },
+        "misc":
+        {
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "10",
+            "border_width": "2"
+        }
+    },
+    "text_box": {
+        "font":
+        {
+            "name": "googlesans_regular",
+            "size": "20",
+            "bold" : "0",
+            "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        }
+    },
+    "panel": {
+        "colours": {
+            "normal_bg": "#001524"
+        }
+    },
+    "@screen_background": {
+        "misc": {
+            "auto_scale_images": "1"
+        },
+        "images": {
+            "background_image": {
+                "path": "resources/images/green_background.jpg"
+            }
+        }
+    },
+    "@menu_background": {
+        "misc": {
+            "auto_scale_images": "1",
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "10",
+            "border_width": "2"
+        }
+    },
+    "#login_background": {
+        "colours": {
+            "dark_bg": "#14616D",
+            "normal_text": "#FFECD1"
+        },
+        "misc": {
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "20",
+            "border_width": "2"
+        }
+    },
+    "#settings_button":
+    {
+        "misc": {
+          "auto_scale_images": "1"
+        },
+        "images": {
+            "normal_image": {
+                "path": "resources/images/settings_FFECD1_48.png"
+            }
+        },
+            "colours": {
+                "normal_bg": "#00000000",
+                "hovered_bg": "#00000000",
+                "clicked_bg": "#00000000",
+                "selected_bg": "#00000000",
+                "active_bg": "#00000000",
+                "normal_border": "#00000000",
+                "hovered_border": "#00000000",
+                "clicked_border": "#00000000",
+                "normal_text": "#00000000",
+                "active_text": "#00000000"
+        }
+    },
+    "#title_label":
+    {
+        "font": {
+            "name": "limelight",
+            "size": "92",
+            "bold" : "0",
+            "regular_path": "resources/fonts/Limelight-Regular.ttf"
+        }
+    },
+    "#register_link": {
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "disabled_bg": "#00000000",
+            "selected_bg": "#00000000",
+            "active_bg": "#00000000",
+            "clicked_bg": "#00000000",
+            "dark_bg": "#00000000",
+            "normal_text": "#FF7D00",
+            "hovered_text": "#000000",
+            "selected_text": "#FF7D00",
+            "active_text": "#FF7D00"
+        },
+            "misc": {
+                "border_width": "0",
+                "shadow_width": "0"
+        }
+    }
+}

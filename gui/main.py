@@ -1,6 +1,7 @@
 from game import Game
 
-g = Game()
-g.is_playing = True
-while g.is_running:
-    g.game_loop()
+game = Game()
+game.is_playing = True
+
+while game.is_running:
+    game.game_loop()
