@@ -1,4 +1,4 @@
-# 🃏 Blackjack FastAPI Backend
+# 🃏 Texas Hold 'Em FastAPI Backend
 
 This project implements a RESTful Texas Hold 'Em game backend using FastAPI.
 It provides API endpoints to start a game, run the flop, turn, river, and showdown, and run a test/{win_needed} function.
@@ -56,17 +56,23 @@ http://127.0.0.1:8000/docs
 GET /
 Returns a message confirming the API is running.
 
-POST /texas/start
-Starts a new Texas Hold 'Em game, dealing 2 cards to each player.
+POST /texas/old_start
+Starts a new (simplified) Texas Hold 'Em game, dealing 2 cards to each player.
+
+POST /texas/single/start
+Initiates a new single-player Texas Hold 'Em game. Starts pre-flop betting with /texas/single/bet.
+
+POST /texas/single/bet
+Place the initial bet for a betting round.
+
+POST /texas/single/action
+Player action: stay (check/call), raise, or fold.
 
 POST /texas/flop
 Deals the flop (3 to the community)
 
 POST /texas/turn
 Deals the flop (3 to the community)
-
-POST /texas/turn
-Deals the flop (1 to the community)
 
 POST /texas/river
 Deals the river (1 to the community)
