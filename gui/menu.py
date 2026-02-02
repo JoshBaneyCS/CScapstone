@@ -11,11 +11,15 @@ from enum import Enum
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
+import requests
+import json
 
 ## Used by game to call upon specific scenes
 class SceneID(Enum):
     LOGIN_SCREEN = 1
     GAME_MENU = 2
+    BLACKJACK = 3
+    POKER = 4
 
 ## Base display that contains all the functionality shared by each screen
 ## Every scene has a settings menu
@@ -24,9 +28,6 @@ class Scene:
         self.game = game
         self.ui_manager = pygame_gui.UIManager(self.game.GAME_RESOLUTION, "theme.json")
         self.run_display = True
-        ## TODO: reference, can delete once themes are implemented
-        ##self.background = pygame.Surface(self.game.GAME_RESOLUTION)
-        ##self.background.fill(self.game.BACKGROUND_COLOR_DARK)
 
         ## Parent container for all UI Elements in this scene
         self.scene_container = pygame_gui.elements.UIPanel(
@@ -72,7 +73,7 @@ class Scene:
         """
         This method must be implemented by subclasses.
         """
-        raise NotImplementedError("Subclasses must implement 'method_to_implement'")
+        raise NotImplementedError("Subclasses must implement 'handle_events(self)'")
 
     def handle_settings_events(self, event):
         match event.ui_element:
@@ -214,7 +215,76 @@ class GameMenu(Scene):
                         print("Play Poker!")
                     ## TODO: swap to blackjack scene once implemented
                     case self.blackjack_button:
-                        print("Play Blackjack!")
+                        self.game.change_scene(SceneID.BLACKJACK)
             self.ui_manager.process_events(event)
 
 ## TODO: add scenes for poker/blackjack
+
+class BlackjackScene(Scene):
+    def __init__(self, game):
+        Scene.__init__(self, game)
+        ## TODO: Greet user with their name
+        self.confirm_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 200), (150, 50)),
+            text='Confirm',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.start_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 300), (150, 50)),
+            text='Start',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.state_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 400), (150, 50)),
+            text='State',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.hit_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 500), (150, 50)),
+            text='Hit',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.stand_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 75, 600), (150, 50)),
+            text='Stand',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.api_output = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect((self.game.GAME_HALF_WIDTH - 400, 700), (800, 50)),
+            text='Output',
+            manager=self.ui_manager,
+            container=self.scene_container)
+
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.game.is_running, self.game.is_playing = False, False
+            if event.type == pygame_gui.UI_BUTTON_PRESSED:
+                match event.ui_element:
+                    case self.settings_button:
+                        self.settings_menu.enable()
+                        self.settings_menu.show()
+                    case self.logout_button:
+                        self.game.change_scene(SceneID.LOGIN_SCREEN)
+                    case self.return_button:
+                        self.settings_menu.disable()
+                        self.settings_menu.hide()
+                    case self.confirm_button:
+                        result = requests.get('http://172.18.0.2:8000/')
+                        self.api_output.set_text(result.text)
+                    case self.start_button:
+                        payload = {'bet': '10'}
+                        result = requests.post('http://172.18.0.2:8000/blackjack/start', data=json.dumps(payload))
+                        self.api_output.set_text(result.text)
+                    case self.state_button:
+                        result = requests.get('http://172.18.0.2:8000/blackjack/state')
+                        self.api_output.set_text(result.text)
+                    case self.hit_button:
+                        result = requests.post('http://172.18.0.2:8000/blackjack/hit')
+                        self.api_output.set_text(result.text)
+                    case self.stand_button:
+                        result = requests.post('http://172.18.0.2:8000/blackjack/hit')
+                        self.api_output.set_text(result.text)
+            self.ui_manager.process_events(event)
+
+## TODO: add scene(s) for poker

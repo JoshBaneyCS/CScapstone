@@ -10,7 +10,7 @@ It is part of the front-end for CMSC495 Capstone Project.
 - Python 3.10+
 - Pygame 2.6.1
 - PyGame-Gui 0.6.14
-
+- Requests 2.32.5
 ---
 
 ## Project Structure
@@ -29,7 +29,7 @@ gui/
 
 From the root of the repository:
 
-python -m pip install pygame pygame-gui
+python -m pip install pygame pygame-gui requests
 
 ### 2. Start the application
 
@@ -51,9 +51,7 @@ The application will (soon) provide a GUI for:
 
 ## Notes
 
-- Still needs to be integrated with back end systems
-- Will create theming JSON files for pygame-gui to make it look pretty after integration with backend is complete 
-- same with Audio?
+- Still needs to be integrated with user authentication and poker
 
 ---
 

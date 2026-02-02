@@ -1,5 +1,6 @@
 import pygame
-from menu import SceneID, LoginScreen, GameMenu
+from menu import SceneID, LoginScreen, GameMenu, BlackjackScene
+
 
 class Game:
     # ----- Global Variables -----
@@ -19,7 +20,8 @@ class Game:
         self.clock = pygame.time.Clock()
         self.scenes = {
             SceneID.LOGIN_SCREEN: LoginScreen(self),
-            SceneID.GAME_MENU: GameMenu(self)
+            SceneID.GAME_MENU: GameMenu(self),
+            SceneID.BLACKJACK: BlackjackScene(self)
         }
         self.current_scene = self.scenes[SceneID.LOGIN_SCREEN]
         self.current_scene.open_scene()
