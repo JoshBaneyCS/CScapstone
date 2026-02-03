@@ -1,6 +1,28 @@
 version: '3.9'
 
 services:
+  postgres:
+    container_name: dev-postgres
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=casino_admin
+      - POSTGRES_PASSWORD=casino_secret_password_123
+      - POSTGRES_DB=casino_db
+    volumes:
+      - dev-postgres-data:/var/lib/postgresql/data
+      - ../database/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    networks:
+      - dev-testing-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U casino_admin -d casino_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   blackjack-api:
     container_name: dev-blackjack-api
     build:
@@ -48,3 +70,7 @@ networks:
   dev-testing-network:
     driver: bridge
     name: dev-testing-network
+
+volumes:
+  dev-postgres-data:
+    name: dev-postgres-data

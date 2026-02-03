@@ -1,6 +1,9 @@
-.PHONY: help build up down restart logs logs-api logs-gui clean shell-api shell-gui test-api vnc status ps start stop prune
+.PHONY: help build up down restart logs logs-api logs-gui logs-db clean shell-api shell-gui shell-db test-api vnc status ps start stop prune psql db-init
 
 .DEFAULT_GOAL := help
+
+DB_USER ?= casino_admin
+DB_NAME ?= casino_db
 
 help:
 	@echo "════════════════════════════════════════════════════════"
@@ -25,6 +28,7 @@ up: ## Start all services (detached mode)
 	@echo "  API Docs:       http://localhost:8000/docs"
 	@echo "  GUI (Web VNC):  http://localhost:6080/vnc.html"
 	@echo "  GUI (VNC):      vnc://localhost:5900 (password: casino123)"
+	@echo "  Postgres:       localhost:5432 (db: $(DB_NAME))"
 	@echo ""
 	@echo "Useful commands:"
 	@echo "  make logs       View all logs"
@@ -53,11 +57,23 @@ logs-api: ## View API logs only
 logs-gui: ## View GUI logs only
 	docker compose logs -f gui
 
+logs-db: ## View Postgres logs only
+	docker compose logs -f postgres
+
 shell-api: ## Get shell in API container
 	docker compose exec blackjack-api /bin/bash
 
 shell-gui: ## Get shell in GUI container
 	docker compose exec gui /bin/bash
+
+shell-db: ## Get shell in Postgres container
+	docker compose exec postgres /bin/sh
+
+psql: ## Open psql in the Postgres container
+	docker compose exec postgres psql -U $(DB_USER) -d $(DB_NAME)
+
+db-init: ## Re-apply schema migration inside the Postgres container
+	docker compose exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /docker-entrypoint-initdb.d/001_init.sql
 
 test-api: ## Test API endpoints
 	@echo "Testing Blackjack API..."

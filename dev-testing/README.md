@@ -1,6 +1,6 @@
 # Dev Testing Environment
 
-> Isolated Docker environment for testing GUI (Pygame) and Blackjack-API components
+> Isolated Docker environment for testing GUI (Pygame), Blackjack-API, and PostgreSQL components
 
 ## Quick Start
 
@@ -31,6 +31,11 @@
    curl http://localhost:8000/
    ```
 
+5. **Access the database**:
+   ```bash
+   make psql
+   ```
+
 ---
 
 ## What's Included
@@ -41,6 +46,7 @@
 |---------|-------------|--------|
 | **blackjack-api** | FastAPI backend with in-memory game state | http://localhost:8000 |
 | **gui** | Pygame application with VNC display | http://localhost:6080/vnc.html |
+| **postgres** | PostgreSQL database with initialized schema | localhost:5432 |
 
 ### Architecture
 
@@ -65,6 +71,11 @@
 │  │  ┌──────────▼──────────────┐    │  │
 │  │  │  API Container          │    │  │
 │  │  │  - FastAPI (8000)       │    │  │
+│  │  └──────────┬──────────────┘    │  │
+│  │             │ SQL               │  │
+│  │  ┌──────────▼──────────────┐    │  │
+│  │  │  Postgres Container     │    │  │
+│  │  │  - PostgreSQL (5432)    │    │  │
 │  │  └─────────────────────────┘    │  │
 │  └─────────────────────────────────┘  │
 └────────────────────────────────────────┘
@@ -84,10 +95,14 @@ make restart     # Restart services
 make logs        # View all logs
 make logs-api    # View API logs only
 make logs-gui    # View GUI logs only
+make logs-db     # View Postgres logs only
 make test-api    # Test API endpoints
 make vnc         # Show VNC connection info
 make shell-api   # Get shell in API container
 make shell-gui   # Get shell in GUI container
+make shell-db    # Get shell in Postgres container
+make psql        # Open psql in Postgres container
+make db-init     # Re-apply schema migration
 make clean       # Remove everything
 ```
 
@@ -160,6 +175,29 @@ curl http://localhost:8000/blackjack/state
 
 ---
 
+## Database Access
+
+The Postgres container initializes using `CScapstone/database/migrations/001_init.sql` on first start.
+
+Default dev credentials:
+- User: `casino_admin`
+- Password: `casino_secret_password_123`
+- Database: `casino_db`
+- Host: `localhost`
+- Port: `5432`
+
+Connect with:
+```bash
+make psql
+```
+
+Re-apply schema migration:
+```bash
+make db-init
+```
+
+---
+
 ## Troubleshooting
 
 ### GUI not showing
@@ -198,6 +236,18 @@ make logs-api
 make shell-api
 # Inside container:
 curl localhost:8000/
+```
+
+### Database not responding
+
+**Check DB health**:
+```bash
+make logs-db
+```
+
+**Open a DB shell**:
+```bash
+make psql
 ```
 
 ### Port already in use
@@ -333,10 +383,9 @@ This is a DEVELOPMENT environment only
 After testing in this environment:
 
 1. **Integration**: Connect GUI to the main backend (Go API)
-2. **Database**: Add PostgreSQL for persistent state
-3. **Authentication**: Integrate with user auth system
-4. **Testing**: Add automated tests (pytest, etc.)
-5. **CI/CD**: Integrate with GitHub Actions
+2. **Authentication**: Integrate with user auth system
+3. **Testing**: Add automated tests (pytest, etc.)
+4. **CI/CD**: Integrate with GitHub Actions
 
 ---
 
