@@ -25,6 +25,13 @@
             "size": "20",
             "bold" : "0",
             "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        },
+        "colours": {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_text": "#FFECD1",
+            "active_text": "#001524"
         }
     },
     "button": {
@@ -81,6 +88,24 @@
             "border_width": "2"
         }
     },
+    "@card_container": {
+        "colours": {
+            "dark_bg": "#00000000",
+            "border_color": "#00000000"
+        },
+        "misc": {
+            "auto_scale_images": "1",
+            "border_width": "0"
+        }
+    },
+    "@card": {
+        "colours": {
+            "border_color": "#00000000"
+        },
+        "misc": {
+            "border_width": "0"
+        }
+    },
     "#login_background": {
         "colours": {
             "dark_bg": "#14616D",
@@ -99,7 +124,7 @@
         },
         "images": {
             "normal_image": {
-                "path": "resources/images/settings_FFECD1_48.png"
+                "path": "resources/images/Icons/settings_FFECD1_48.png"
             }
         },
             "colours": {

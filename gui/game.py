@@ -1,9 +1,18 @@
+## TODO: Replace "magic" numbers with constants for easier maintainability/searching (applies to all files)
 import pygame
-from menu import SceneID, LoginScreen, GameMenu, BlackjackScene
+import pygame_gui
+from scene import SceneID, LoginScreen, GameMenu, BlackjackScene
 
+# ----- Global Card Identifier Pieces  -----
+## used by the card/card backing dictionaries
+suits = ['H', 'D', 'C', 'S']
+ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+colors = ['red', 'blue', 'green', 'black', 'orange', 'purple']
 
+## Sets up and runs GUI for the game
+## Responsible for managing the different scenes (login, game selection, blackjack, poker)
 class Game:
-    # ----- Global Variables -----
+    # ----- Globals/Constants -----
     GAME_NAME = "Capstone Casino"
     GAME_WIDTH = 1920
     GAME_HEIGHT = 1080
@@ -15,9 +24,24 @@ class Game:
         # ----- Pygame Setup -----
         pygame.init()
         pygame.display.set_caption(self.GAME_NAME)
-        self.window =  pygame.display.set_mode(self.GAME_RESOLUTION, pygame.SCALED | pygame.FULLSCREEN)
+        display_info = pygame.display.Info()
+        self.screen_width = display_info.current_w
+        self.screen_height = display_info.current_h
+        screen_resolution = (self.screen_width, self.screen_height)
+        ## TODO: remove after confirming resolution changes in dev-test
+        #self.window =  pygame.display.set_mode(self.GAME_RESOLUTION, pygame.SCALED | pygame.FULLSCREEN)
+        self.window = pygame.display.set_mode(screen_resolution, pygame.FULLSCREEN)
+        self.ui_manager = pygame_gui.UIManager(screen_resolution)
+        self.canvas = pygame_gui.elements.UIPanel(
+            relative_rect=pygame.Rect((0, 0), screen_resolution),
+            manager=self.ui_manager,
+            starting_height=0)
         self.is_running, self.is_playing = True, False
         self.clock = pygame.time.Clock()
+
+        self.cardDict = {f"{rank}{suit}": pygame.image.load(f"resources/images/Cards/{rank}{suit}.png").convert_alpha() for suit in suits for rank in ranks}
+        self.backingDict = {f"{color}": pygame.image.load(f"resources/images/Cards/Card Back/card back {color}.png").convert_alpha() for color in colors}
+
         self.scenes = {
             SceneID.LOGIN_SCREEN: LoginScreen(self),
             SceneID.GAME_MENU: GameMenu(self),
