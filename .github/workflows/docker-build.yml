@@ -73,6 +73,29 @@ permissions:
 # =============================================================================
 jobs:
   # ===========================================================================
+  # CHECK WHICH COMPONENTS TO BUILD
+  # ===========================================================================
+  check-components:
+    name: Check Components
+    runs-on: ubuntu-latest
+    outputs:
+      build_frontend: ${{ steps.check.outputs.build_frontend }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for frontend source code
+        id: check
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            echo "build_frontend=true" >> $GITHUB_OUTPUT
+            echo "Frontend source code found - will build frontend image"
+          else
+            echo "build_frontend=false" >> $GITHUB_OUTPUT
+            echo "::warning::Frontend source code not found - skipping frontend Docker build"
+          fi
+
+  # ===========================================================================
   # BUILD AND PUSH BACKEND IMAGE
   # ===========================================================================
   build-backend:
@@ -127,6 +150,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
+            # Environment-specific tags
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
+            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.title=Casino Backend API
             org.opencontainers.image.description=Go REST API for Casino Capstone
@@ -173,24 +200,26 @@ jobs:
   build-frontend:
     name: Build Frontend Image
     runs-on: ubuntu-latest
-    
+    needs: check-components
+    if: needs.check-components.outputs.build_frontend == 'true'
+
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
       image_digest: ${{ steps.build.outputs.digest }}
-    
+
     steps:
       # -----------------------------------------------------------------------
       # SETUP
       # -----------------------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       # -----------------------------------------------------------------------
       # AUTHENTICATION
       # -----------------------------------------------------------------------
@@ -200,7 +229,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       # -----------------------------------------------------------------------
       # METADATA
       # -----------------------------------------------------------------------
@@ -216,6 +245,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
+            # Environment-specific tags
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
+            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.title=Casino Frontend
             org.opencontainers.image.description=React frontend for Casino Capstone
@@ -260,40 +293,44 @@ jobs:
   update-manifests:
     name: Update Kubernetes Manifests
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+    needs: [build-backend, check-components, build-frontend]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.build-backend.result == 'success'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Update image tags in Kustomization
         run: |
           # Update prod overlay with new image tags
           cd infra/k8s/overlays/prod
-          
-          # Use kustomize to update image tags
-          # This creates a commit that ArgoCD will detect
-          cat > kustomization-images.yaml << EOF
-          images:
-            - name: casino-backend
-              newName: ${{ env.BACKEND_IMAGE }}
-              newTag: "${{ needs.build-backend.outputs.image_tag }}"
-            - name: casino-frontend
-              newName: ${{ env.FRONTEND_IMAGE }}
-              newTag: "${{ needs.build-frontend.outputs.image_tag }}"
-          EOF
-          
+
+          # Start building the kustomization-images.yaml
+          echo "images:" > kustomization-images.yaml
+          echo "  - name: casino-backend" >> kustomization-images.yaml
+          echo "    newName: ${{ env.BACKEND_IMAGE }}" >> kustomization-images.yaml
+          echo "    newTag: \"${{ needs.build-backend.outputs.image_tag }}\"" >> kustomization-images.yaml
+
+          # Only add frontend if it was built
+          if [ "${{ needs.check-components.outputs.build_frontend }}" == "true" ]; then
+            echo "  - name: casino-frontend" >> kustomization-images.yaml
+            echo "    newName: ${{ env.FRONTEND_IMAGE }}" >> kustomization-images.yaml
+            echo "    newTag: \"${{ needs.build-frontend.outputs.image_tag }}\"" >> kustomization-images.yaml
+          fi
+
           echo "Updated image tags:"
           cat kustomization-images.yaml
-      
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          
+
           # Check if there are changes
           if git diff --quiet; then
             echo "No changes to commit"
@@ -310,18 +347,25 @@ jobs:
   notify:
     name: Notify
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
+    needs: [build-backend, check-components, build-frontend]
     if: always()
-    
+
     steps:
       - name: Create summary
         run: |
-          echo "# Docker Build Summary 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "# Docker Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Image | Status | Tag |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| Backend | ${{ needs.build-backend.result }} | \`${{ needs.build-backend.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.build-frontend.result }} | \`${{ needs.build-frontend.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+
+          # Only show frontend if it was supposed to be built
+          if [ "${{ needs.check-components.outputs.build_frontend }}" == "true" ]; then
+            echo "| Frontend | ${{ needs.build-frontend.result }} | \`${{ needs.build-frontend.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Frontend | skipped (no source) | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
