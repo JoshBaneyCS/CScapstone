@@ -1,3 +1,5 @@
+"""Texas Hold'em Poker API using FastAPI."""
+
 import random
 
 from fastapi import FastAPI, HTTPException
@@ -60,11 +62,11 @@ class GameState(BaseModel):
     to_act: str | None = None  # "player" or "cpu"
 
     # private deck (not serialized)
-    _deck: list[str] = PrivateAttr(default_factory=list[str])
+    _deck: list[str] = PrivateAttr(default_factory=list[str])  # deck is kept server-side
 
 
 # ----- In-memory game state -----
-TEXAS_GAME: GameState | None = None
+TEXAS_GAME: GameState | None = None  # global singleton game state
 
 # ----- Card helpers -----
 SUITS = ["S", "H", "D", "C"]
@@ -89,7 +91,7 @@ def draw(deck: list[str]) -> str:
 
 def parse_card(card: str) -> tuple[int, str]:
     """Parse a card string into (rank_value, suit)."""
-    return RANK_VALUE[card[:-1]], card[-1]
+    return RANK_VALUE[card[:-1]], card[-1]  # rank, suit
 
 
 # ----- Poker hand evaluator -----
@@ -99,18 +101,18 @@ def _get_straight_high(ranks_set: set[int]) -> int | None:
     ranks = set(ranks_set)
     if 14 in ranks:
         ranks.add(1)
-    sorted_r = sorted(ranks)
-    consec = 1
+    sorted_r = sorted(ranks)  # ascending sort for straight detection
+    consec = 1  # consecutive count
     last = None
     best_high = None
-    for r in sorted_r:
-        if last is None or r != last + 1:
-            consec = 1
-        else:
-            consec += 1
-        if consec >= 5:
-            best_high = r
-        last = r
+    for r in sorted_r:  # for each rank in ascending order
+        if last is None or r != last + 1:  # if not consecutive
+            consec = 1  # reset count
+        else:  # consecutive
+            consec += 1  # increment count of consecutive ranks
+        if consec >= 5:  # found a straight
+            best_high = r  # update best high rank
+        last = r  # update last rank
     return best_high
 
 
@@ -122,9 +124,9 @@ def evaluate_best_hand(cards: list[str]) -> tuple[int, list[int]]:
     tie_breakers: list of ranks descending used for breaking ties
     """
     ranks: list[int] = []
-    suits_map: dict[str, list[int]] = {s: [] for s in SUITS}
-    for c in cards:
-        r, s = parse_card(c)
+    suits_map: dict[str, list[int]] = {s: [] for s in SUITS}  # suit -> list of ranks
+    for c in cards:  # for each card in hand
+        r, s = parse_card(c)  # rank, suit
         ranks.append(r)
         suits_map[s].append(r)
 
@@ -180,20 +182,20 @@ def evaluate_best_hand(cards: list[str]) -> tuple[int, list[int]]:
     # Three of a kind
     if trips:
         three = trips[0]
-        kickers = [r for r in unique_desc if r != three][:2]
+        kickers = [r for r in unique_desc if r != three][:2]  # top 2 kickers
         return 4, [three, *kickers]
 
     # Two pair
-    pair_ranks = sorted([r for r, c in counts.items() if c == 2], reverse=True)
+    pair_ranks = sorted([r for r, c in counts.items() if c == 2], reverse=True)  # all pairs
     if len(pair_ranks) >= 2:
         top1, top2 = pair_ranks[0], pair_ranks[1]
-        kicker = next(r for r in unique_desc if r not in (top1, top2))
+        kicker = next(r for r in unique_desc if r not in (top1, top2))  # top kicker
         return 3, [top1, top2, kicker]
 
     # One pair
     if len(pair_ranks) == 1:
         pair = pair_ranks[0]
-        kickers = [r for r in unique_desc if r != pair][:3]
+        kickers = [r for r in unique_desc if r != pair][:3]  # top 3 kickers
         return 2, [pair, *kickers]
 
     # High card
@@ -238,6 +240,7 @@ def state() -> GameState:
 
 
 def _ensure_single() -> GameState:
+    """Ensure a single-player game is active."""
     s = state()
     if s.mode != "single":
         raise HTTPException(status_code=400, detail="No active single-player round.")
@@ -245,6 +248,7 @@ def _ensure_single() -> GameState:
 
 
 def _post_bet(player: str, amount: int) -> None:
+    """Post a bet and update stacks/pot/current bet."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     if TEXAS_GAME.player_stacks is None or TEXAS_GAME.round_bets is None:
@@ -260,6 +264,7 @@ def _post_bet(player: str, amount: int) -> None:
 
 
 def _call_or_check(player: str) -> int:
+    """Call up to current bet or check if nothing to call."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     if TEXAS_GAME.player_stacks is None or TEXAS_GAME.round_bets is None:
@@ -275,6 +280,7 @@ def _call_or_check(player: str) -> int:
 
 
 def _round_settled() -> bool:
+    """Check if both players have matched the current bet."""
     if TEXAS_GAME is None:
         return False
     if TEXAS_GAME.round_bets is None or TEXAS_GAME.current_bet is None:
@@ -283,6 +289,7 @@ def _round_settled() -> bool:
 
 
 def _advance_stage() -> None:
+    """Advance the hand stage and reset round betting state."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     if TEXAS_GAME.status == "preflop":
@@ -304,33 +311,35 @@ def _advance_stage() -> None:
 
 
 def _settle_showdown() -> None:
+    """Compute winners, split pot, and finalize the hand."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     community = TEXAS_GAME.community_cards
     scores: dict[str, tuple[int, list[int]]] = {}
     for player, hand in TEXAS_GAME.players_hands.items():
-        scores[player] = evaluate_best_hand(hand + community)
+        scores[player] = evaluate_best_hand(hand + community)  # score for each player
     best_players: list[str] = []
     best_score: tuple[int, list[int]] | None = None
     for p, sc in scores.items():
-        if best_score is None or sc > best_score:
+        if best_score is None or sc > best_score:  # found new best score
             best_score = sc
-            best_players = [p]
-        elif sc == best_score:
-            best_players.append(p)
+            best_players = [p]  # new winner list
+        elif sc == best_score:  # tie for best score
+            best_players.append(p)  # add to winners
     TEXAS_GAME.winners = best_players
     TEXAS_GAME.winning_number = best_score
     if TEXAS_GAME.player_stacks is not None:
         pot = TEXAS_GAME.pot or 0
         if best_players:
-            split = pot // len(best_players)
-            remainder = pot % len(best_players)
+            split = pot // len(best_players)  # integer division for split pot
+            remainder = pot % len(best_players)  # remainder to first winners
             for i, p in enumerate(best_players):
-                TEXAS_GAME.player_stacks[p] += split + (1 if i < remainder else 0)
+                TEXAS_GAME.player_stacks[p] += split + (1 if i < remainder else 0)  # split pot
     TEXAS_GAME.status = "finished"
 
 
 def _cpu_decide_action() -> tuple[str, int]:
+    """Decide CPU decision based on hand strength and bet to call."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     cpu_hand = TEXAS_GAME.players_hands.get("CPU", [])
@@ -345,10 +354,10 @@ def _cpu_decide_action() -> tuple[str, int]:
 
     if to_call == 0 and strength >= 5 and cpu_stack > 0:
         action = "raise"
-        amount = min(5, cpu_stack)
+        amount = min(5, cpu_stack)  # small raise
     elif to_call > 0 and strength >= 6 and cpu_stack > to_call + 5:
         action = "raise"
-        amount = 5
+        amount = 5  # small raise
     elif to_call > 0 and ((strength >= 4 and to_call <= 10) or to_call <= 2):
         action = "stay"
     elif to_call > 0:
@@ -358,6 +367,7 @@ def _cpu_decide_action() -> tuple[str, int]:
 
 
 def _finish_on_fold(folding_player: str) -> None:
+    """End the hand immediately when a player folds."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     winner = "CPU" if folding_player == "Player" else "Player"
@@ -371,6 +381,7 @@ def _finish_on_fold(folding_player: str) -> None:
 
 
 def _cpu_take_turn() -> None:
+    """Execute CPU action and return control to player."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     action, amount = _cpu_decide_action()
@@ -390,6 +401,7 @@ def _cpu_take_turn() -> None:
 
 
 def _maybe_progress_round() -> None:
+    """Advance stages or settle showdown when bets are matched."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
     if TEXAS_GAME.status in ("finished", "showdown"):
@@ -585,18 +597,18 @@ def showdown() -> GameState:
     community = TEXAS_GAME.community_cards
     scores: dict[str, tuple[int, list[int]]] = {}
     for player, hand in TEXAS_GAME.players_hands.items():
-        combined = hand + community
+        combined = hand + community  # player's full hand
         scores[player] = evaluate_best_hand(combined)
 
     # find best
     best_players: list[str] = []
     best_score: tuple[int, list[int]] | None = None
     for p, sc in scores.items():  # player, score
-        if best_score is None or sc > best_score:
+        if best_score is None or sc > best_score:  # found new best score
             best_score = sc
-            best_players = [p]
+            best_players = [p]  # new winner list
         elif sc == best_score:
-            best_players.append(p)
+            best_players.append(p)  # tie for best score
 
     TEXAS_GAME.winners = best_players
     TEXAS_GAME.status = "finished"
@@ -625,5 +637,6 @@ def get_state() -> GameState:
 
 
 if __name__ == "__main__":
+    # quick local test
     for i in range(1, 11):
         print(texas_test(i))
