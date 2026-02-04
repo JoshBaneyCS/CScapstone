@@ -28,9 +28,6 @@ COPY dev-testing/gui/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY dev-testing/gui/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-RUN mkdir -p /root/.vnc && \
-    x11vnc -storepasswd casino123 /root/.vnc/passwd
-
 RUN mkdir -p /var/log/supervisor
 
 EXPOSE 5900 6080

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capstone Casino! - Play</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            height: 60px;
+        }
+        .logo {
+            font-size: 1.3rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .bankroll {
+            background: rgba(255, 215, 0, 0.1);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            font-size: 0.9rem;
+        }
+        .bankroll-amount {
+            color: #ffd700;
+            font-weight: bold;
+        }
+        .logout-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .sound-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 20px;
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+        .sound-btn:hover {
+            background: rgba(255, 215, 0, 0.3);
+        }
+        .sound-btn.muted {
+            background: rgba(255, 255, 255, 0.1);
+            color: #888;
+        }
+        .game-container {
+            height: calc(100vh - 60px);
+            padding: 5px;
+        }
+        .vnc-wrapper {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            width: 100%;
+            height: 100%;
+        }
+        .vnc-wrapper iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">Capstone Casino</div>
+        <div class="user-info">
+            <span>Welcome, {{.FirstName}}!</span>
+            <div class="bankroll">
+                Bankroll: <span class="bankroll-amount">${{.Bankroll}}</span>
+            </div>
+            <button id="soundBtn" class="sound-btn muted" onclick="toggleSound()">🔇 Sound</button>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </header>
+    <div class="game-container">
+        <div class="vnc-wrapper">
+            <iframe id="vncFrame" src="/vnc/vnc.html?autoconnect=true&resize=scale&reconnect=true&reconnect_delay=1000&path=websockify" allowfullscreen></iframe>
+        </div>
+    </div>
+    <audio id="bgMusic" loop>
+        <source src="/static/casino-sounds-gb.mp3" type="audio/mpeg">
+    </audio>
+    <script>
+        const audio = document.getElementById('bgMusic');
+        const soundBtn = document.getElementById('soundBtn');
+
+        function toggleSound() {
+            if (audio.paused) {
+                audio.play();
+                soundBtn.textContent = '🔊 Sound';
+                soundBtn.classList.remove('muted');
+            } else {
+                audio.pause();
+                soundBtn.textContent = '🔇 Sound';
+                soundBtn.classList.add('muted');
+            }
+        }
+
+        // Hide noVNC control panel and credentials dialog after iframe loads
+        const vncFrame = document.getElementById('vncFrame');
+        vncFrame.addEventListener('load', function() {
+            try {
+                const iframeDoc = vncFrame.contentDocument || vncFrame.contentWindow.document;
+                const style = iframeDoc.createElement('style');
+                style.textContent = `
+                    #noVNC_control_bar_anchor { display: none !important; }
+                    #noVNC_credentials_dlg { display: none !important; }
+                    #noVNC_transition { display: none !important; }
+                    .noVNC_vcenter { display: none !important; }
+                `;
+                iframeDoc.head.appendChild(style);
+            } catch (e) {
+                console.log('Could not inject CSS into iframe');
+            }
+        });
+    </script>
+</body>
+</html>

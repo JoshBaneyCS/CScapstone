@@ -47,7 +47,7 @@ class Game:
             SceneID.GAME_MENU: GameMenu(self),
             SceneID.BLACKJACK: BlackjackScene(self)
         }
-        self.current_scene = self.scenes[SceneID.LOGIN_SCREEN]
+        self.current_scene = self.scenes[SceneID.GAME_MENU]
         self.current_scene.open_scene()
 
     def game_loop(self):

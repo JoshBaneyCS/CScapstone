@@ -23,6 +23,31 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  backend:
+    container_name: dev-backend
+    build:
+      context: ..
+      dockerfile: dev-testing/backend/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgres://casino_admin:casino_secret_password_123@postgres:5432/casino_db?sslmode=disable
+      - JWT_SECRET=dev-secret-key-change-in-production
+      - BLACKJACK_API_URL=http://blackjack-api:8000
+      - POKER_API_URL=http://poker-api:8001
+      - TEMPLATE_PATH=/app/templates
+    networks:
+      - dev-testing-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   blackjack-api:
     container_name: dev-blackjack-api
     build:
@@ -44,26 +69,57 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  poker-api:
+    container_name: dev-poker-api
+    build:
+      context: ..
+      dockerfile: dev-testing/poker-api/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../apps:/app:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - dev-testing-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   gui:
     container_name: dev-gui
     build:
       context: ..
       dockerfile: dev-testing/gui/Dockerfile
     ports:
-      - "5900:5900"
       - "6080:6080"
     volumes:
       - ../gui:/app:ro
     environment:
       - DISPLAY=:99
-      - VNC_PASSWORD=casino123
-      - BLACKJACK_API_URL=http://blackjack-api:8000
-      - PYTHONUNBUFFERED=1
     networks:
       - dev-testing-network
     depends_on:
-      blackjack-api:
-        condition: service_healthy
+      - blackjack-api
+      - poker-api
+    restart: unless-stopped
+
+  nginx:
+    container_name: dev-nginx
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - dev-testing-network
+    depends_on:
+      - backend
+      - gui
     restart: unless-stopped
 
 networks:

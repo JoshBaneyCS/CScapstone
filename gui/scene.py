@@ -248,15 +248,15 @@ class BlackjackScene(Scene):
                         case self.place_bet_button:
                             ## TODO: Base functionality verification, use as a template to build full functionality
                             payload = {'bet': '10'}
-                            result = requests.post('http://172.18.0.2:8000/blackjack/start', data=json.dumps(payload))
+                            result = requests.post('http://blackjack-api:8000/blackjack/start', data=json.dumps(payload))
                             print(result.text)
                         case self.hit_button:
                             ## TODO: Base functionality verification, use as a template to build full functionality
-                            result = requests.post('http://172.18.0.2:8000/blackjack/hit')
+                            result = requests.post('http://blackjack-api:8000/blackjack/hit')
                             print(result.text)
                         case self.stand_button:
                             ## TODO: Base functionality verification, use as a template to build full functionality
-                            result = requests.post('http://172.18.0.2:8000/blackjack/stand')
+                            result = requests.post('http://blackjack-api:8000/blackjack/stand')
                             print(result.text)
             self.ui_manager.process_events(event)
 

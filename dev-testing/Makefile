@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs logs-api logs-gui logs-db clean shell-api shell-gui shell-db test-api vnc status ps start stop prune psql db-init
+.PHONY: help build up down restart logs logs-backend logs-api logs-poker logs-gui logs-nginx logs-db clean shell-backend shell-api shell-db test-api status ps start stop prune psql db-init
 
 .DEFAULT_GOAL := help
 
@@ -24,15 +24,15 @@ up: ## Start all services (detached mode)
 	@echo "Services started successfully!"
 	@echo ""
 	@echo "Access Points:"
+	@echo "  Casino Web:     http://localhost (login/register/game)"
+	@echo "  Go Backend:     http://localhost:8080"
 	@echo "  Blackjack API:  http://localhost:8000"
-	@echo "  API Docs:       http://localhost:8000/docs"
-	@echo "  GUI (Web VNC):  http://localhost:6080/vnc.html"
-	@echo "  GUI (VNC):      vnc://localhost:5900 (password: casino123)"
+	@echo "  Poker API:      http://localhost:8001"
+	@echo "  noVNC Direct:   http://localhost:6080"
 	@echo "  Postgres:       localhost:5432 (db: $(DB_NAME))"
 	@echo ""
 	@echo "Useful commands:"
 	@echo "  make logs       View all logs"
-	@echo "  make vnc        Show VNC connection info"
 	@echo "  make test-api   Test API endpoints"
 	@echo ""
 
@@ -51,20 +51,29 @@ restart: ## Restart all services
 logs: ## View logs from all services
 	docker compose logs -f
 
-logs-api: ## View API logs only
+logs-backend: ## View Go backend logs
+	docker compose logs -f backend
+
+logs-api: ## View Blackjack API logs
 	docker compose logs -f blackjack-api
 
-logs-gui: ## View GUI logs only
+logs-poker: ## View Poker API logs
+	docker compose logs -f poker-api
+
+logs-gui: ## View GUI/VNC logs
 	docker compose logs -f gui
 
-logs-db: ## View Postgres logs only
+logs-nginx: ## View nginx logs
+	docker compose logs -f nginx
+
+logs-db: ## View Postgres logs
 	docker compose logs -f postgres
 
-shell-api: ## Get shell in API container
-	docker compose exec blackjack-api /bin/bash
+shell-backend: ## Get shell in backend container
+	docker compose exec backend /bin/sh
 
-shell-gui: ## Get shell in GUI container
-	docker compose exec gui /bin/bash
+shell-api: ## Get shell in Blackjack API container
+	docker compose exec blackjack-api /bin/bash
 
 shell-db: ## Get shell in Postgres container
 	docker compose exec postgres /bin/sh
@@ -76,39 +85,17 @@ db-init: ## Re-apply schema migration inside the Postgres container
 	docker compose exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /docker-entrypoint-initdb.d/001_init.sql
 
 test-api: ## Test API endpoints
-	@echo "Testing Blackjack API..."
+	@echo "Testing APIs..."
 	@echo ""
-	@echo "GET / (root endpoint):"
-	@curl -s http://localhost:8000/ | python3 -m json.tool || echo "API not responding"
+	@echo "Backend Health:"
+	@curl -s http://localhost:8080/api/health | python3 -m json.tool || echo "Backend not responding"
 	@echo ""
-	@echo "POST /blackjack/start (start game with \$$10 bet):"
-	@curl -s -X POST http://localhost:8000/blackjack/start \
-		-H "Content-Type: application/json" \
-		-d '{"bet": 10}' | python3 -m json.tool || echo "Failed to start game"
+	@echo "Blackjack API:"
+	@curl -s http://localhost:8000/ | python3 -m json.tool || echo "Blackjack API not responding"
 	@echo ""
-	@echo "GET /blackjack/state (get current state):"
-	@curl -s http://localhost:8000/blackjack/state | python3 -m json.tool || echo "No active game"
+	@echo "Poker API:"
+	@curl -s http://localhost:8001/ | python3 -m json.tool || echo "Poker API not responding"
 	@echo ""
-
-vnc: ## Show VNC connection information
-	@echo "════════════════════════════════════════════════════════"
-	@echo "  GUI VNC Access Information"
-	@echo "════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "Web Browser (Recommended):"
-	@echo "   http://localhost:6080/vnc.html"
-	@echo "   Click 'Connect' (password: casino123)"
-	@echo ""
-	@echo "VNC Client:"
-	@echo "   vnc://localhost:5900"
-	@echo "   Password: casino123"
-	@echo ""
-	@echo "VNC Clients by OS:"
-	@echo "   macOS:   Built-in (Finder → Go → Connect to Server)"
-	@echo "   Windows: RealVNC, TightVNC, or UltraVNC"
-	@echo "   Linux:   Remmina, Vinagre, or TigerVNC"
-	@echo ""
-	@echo "════════════════════════════════════════════════════════"
 
 status: ## Show service status
 	docker compose ps
@@ -120,7 +107,7 @@ clean: ## Remove containers, images, and volumes
 	docker compose down -v
 	docker compose rm -f
 	@echo "Removing images..."
-	@docker rmi dev-testing-blackjack-api dev-testing-gui 2>/dev/null || true
+	@docker rmi dev-testing-backend dev-testing-blackjack-api dev-testing-poker-api dev-testing-gui 2>/dev/null || true
 	@echo "Cleanup complete!"
 
 prune: clean ## Deep clean (remove everything including networks)
