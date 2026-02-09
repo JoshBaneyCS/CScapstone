@@ -1,7 +1,7 @@
 ## TODO: Replace "magic" numbers with constants for easier maintainability/searching (applies to all files)
 import pygame
 import pygame_gui
-from scene import SceneID, LoginScreen, GameMenu, BlackjackScene
+from scene import SceneID, GameMenu, BlackjackScene, PokerScene
 
 # ----- Global Card Identifier Pieces  -----
 ## used by the card/card backing dictionaries
@@ -9,8 +9,8 @@ suits = ['H', 'D', 'C', 'S']
 ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
 colors = ['red', 'blue', 'green', 'black', 'orange', 'purple']
 
-## Sets up and runs GUI for the game
-## Responsible for managing the different scenes (login, game selection, blackjack, poker)
+## Sets up and runs GUI
+## Responsible for managing the different scenes (game selection, blackjack, poker)
 class Game:
     # ----- Globals/Constants -----
     GAME_NAME = "Capstone Casino"
@@ -19,8 +19,11 @@ class Game:
     GAME_HALF_WIDTH = GAME_WIDTH / 2
     GAME_HALF_HEIGHT = GAME_HEIGHT / 2
     GAME_RESOLUTION = (GAME_WIDTH, GAME_HEIGHT)
+    CANVAS_ORIGIN_LOCATION = (0,0)
+    FRAMES_PER_SECOND = 60
 
     def __init__(self):
+
         # ----- Pygame Setup -----
         pygame.init()
         pygame.display.set_caption(self.GAME_NAME)
@@ -33,7 +36,7 @@ class Game:
         self.window = pygame.display.set_mode(screen_resolution, pygame.FULLSCREEN)
         self.ui_manager = pygame_gui.UIManager(screen_resolution)
         self.canvas = pygame_gui.elements.UIPanel(
-            relative_rect=pygame.Rect((0, 0), screen_resolution),
+            relative_rect=pygame.Rect(self.CANVAS_ORIGIN_LOCATION, screen_resolution),
             manager=self.ui_manager,
             starting_height=0)
         self.is_running, self.is_playing = True, False
@@ -43,16 +46,16 @@ class Game:
         self.backingDict = {f"{color}": pygame.image.load(f"resources/images/Cards/Card Back/card back {color}.png").convert_alpha() for color in colors}
 
         self.scenes = {
-            SceneID.LOGIN_SCREEN: LoginScreen(self),
             SceneID.GAME_MENU: GameMenu(self),
-            SceneID.BLACKJACK: BlackjackScene(self)
+            SceneID.BLACKJACK: BlackjackScene(self),
+            SceneID.POKER: PokerScene(self)
         }
         self.current_scene = self.scenes[SceneID.GAME_MENU]
         self.current_scene.open_scene()
 
     def game_loop(self):
         while self.is_playing:
-            time_delta = self.clock.tick(60) / 1000.0
+            time_delta = self.clock.tick(self.FRAMES_PER_SECOND) / 1000.0
             self.current_scene.handle_events()
             self.current_scene.update(time_delta)
             self.current_scene.draw_scene()
