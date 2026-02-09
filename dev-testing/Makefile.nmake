@@ -1,0 +1,99 @@
+# NMAKE does not support .PHONY. We use the first target as the default.
+# NMAKE does not support .DEFAULT_GOAL, so 'help' must be first.
+
+# Standard macro assignments (NMAKE uses = instead of ?= for simple scripts)
+DB_USER = casino_admin
+DB_NAME = casino_db
+
+help:
+	@echo ════════════════════════════════════════════════════════
+	@echo   Dev Testing Environment - Available Commands
+	@echo ════════════════════════════════════════════════════════
+	@echo   build           Build all Docker images
+	@echo   up              Start all services (detached mode)
+	@echo   down            Stop all services
+	@echo   restart         Restart all services
+	@echo   logs            View all logs
+	@echo   psql            Open psql in the Postgres container
+	@echo   clean           Remove containers and images
+	@echo ════════════════════════════════════════════════════════
+
+build: 
+	@echo Building Docker images...
+	docker compose build
+
+up: 
+	@echo Starting services...
+	docker compose up -d
+	@echo Access Points:
+	@echo   Casino Web:     http://localhost
+	@echo   Postgres:       localhost:5432 (db: $(DB_NAME))
+
+start: up
+
+down: 
+	@echo Stopping services...
+	docker compose down
+
+stop: down
+
+restart: 
+	@echo Restarting services...
+	docker compose restart
+
+logs: 
+	docker compose logs -f
+
+logs-backend: 
+	docker compose logs -f backend
+
+logs-api: 
+	docker compose logs -f blackjack-api
+
+logs-poker: 
+	docker compose logs -f poker-api
+
+logs-gui: 
+	docker compose logs -f gui
+
+logs-nginx: 
+	docker compose logs -f nginx
+
+logs-db: 
+	docker compose logs -f postgres
+
+shell-backend: 
+	docker compose exec backend /bin/sh
+
+shell-api: 
+	docker compose exec blackjack-api /bin/bash
+
+shell-db: 
+	docker compose exec postgres /bin/sh
+
+psql: 
+	docker compose exec postgres psql -U $(DB_USER) -d $(DB_NAME)
+
+db-init: 
+	docker compose exec -T postgres psql -U $(DB_USER) -d $(DB_NAME) -f /docker-entrypoint-initdb.d/001_init.sql
+
+test-api: 
+	@echo Testing APIs...
+	curl -s http://localhost:8080/api/health
+	curl -s http://localhost:8000/
+	curl -s http://localhost:8001/
+
+status: 
+	docker compose ps
+
+ps: status
+
+clean: 
+	@echo Cleaning up...
+	docker compose down -v
+	docker compose rm -f
+	@echo Cleanup complete!
+
+prune: clean 
+	@echo Deep cleaning...
+	docker system prune -f

@@ -358,6 +358,10 @@ ps aux  # See running processes
 - No built-in VNC client (install RealVNC Viewer)
 - Browser access works perfectly
 - Performance: Good (WSL2 improves it significantly)
+- to run any `make` commands on Windows:
+	- open a Developer Command Prompt for VisualStudio
+	- cd to dev-testing directory
+	- replace any `make` with `nmake /f Makefile.nmake`
 
 ### Linux
 - Docker and Docker Compose required
