@@ -1,10 +1,11 @@
 from enum import Enum
+import requests
+import json
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
-import requests
-import json
 from card import Card
+import credits
 
 ## Used by game to call upon specific scenes
 class SceneID(Enum):
@@ -31,7 +32,8 @@ class BlackjackGameState(Enum):
 
 # ----- Globals/Constants -----
 ## Common
-BLACK = (0,0,0)
+BLACK = (0, 0, 0)
+TOP_LEFT = (0, 0)
 
 WHITE_CHIP_WORTH = 1
 RED_CHIP_WORTH = 5
@@ -40,16 +42,10 @@ BLUE_CHIP_WORTH = 50
 BLACK_CHIP_WORTH = 100
 
 ## Scene
-SETTINGS_BUTTON_SIZE = (50, 50)
-SETTINGS_BUTTON_LOCATION = (1850 - SETTINGS_BUTTON_SIZE[0] / 2, 50)
-SETTINGS_PANEL_SIZE = (400, 400)
-SETTINGS_BUTTON_SIZE = (100, 50)
-SETTINGS_LEAVE_BUTTON_LOCATION = (
-    200 - SETTINGS_BUTTON_SIZE[0] / 2,
-    100 - SETTINGS_BUTTON_SIZE[1] / 2)
-SETTINGS_CLOSE_BUTTON_LOCATION = (
-    200 - SETTINGS_BUTTON_SIZE[0] / 2 ,
-    200 - SETTINGS_BUTTON_SIZE[1] / 2 )
+LEAVE_BUTTON_SIZE = (50, 50)
+LEAVE_BUTTON_LOCATION = (1850 - LEAVE_BUTTON_SIZE[0] / 2, 50)
+#SETTINGS_PANEL_SIZE = (400, 400)
+#SETTINGS_BUTTON_SIZE = (100, 50)
 
 ## Game Menu
 TITLE_SIZE = (900, 120)
@@ -57,6 +53,7 @@ TITLE_Y_LOCATION = 200
 GAME_BUTTON_SIZE = (150, 50)
 POKER_BUTTON_Y_LOCATION = 490
 BLACKJACK_BUTTON_Y_LOCATION = 580
+CREDITS_BUTTON_Y_LOCATION = 670
 
 ## Blackjack
 BLACKJACK_BUTTON_SIZE = (150, 50)
@@ -70,7 +67,7 @@ BLACKJACK_RESET_BUTTON_LOCATION = (560 - BLACKJACK_BUTTON_SIZE[0] / 2, 600)
 BLACKJACK_CHIP_CONTAINER_SIZE = (620, 420)
 BLACKJACK_CHIP_CONTAINER_LOCATION = (50, 1080 - BLACKJACK_CHIP_CONTAINER_SIZE[1] - 10)
 BLACKJACK_CHIP_SIZE = (200, 200)
-BLACKJACK_WHITE_CHIP_LOCATION = (0, 0)
+BLACKJACK_WHITE_CHIP_LOCATION = TOP_LEFT
 BLACKJACK_RED_CHIP_LOCATION = (200, 0)
 BLACKJACK_GREEN_CHIP_LOCATION = (400, 0)
 BLACKJACK_BLUE_CHIP_LOCATION = (100, 200)
@@ -109,34 +106,6 @@ class Scene:
         self.scene_container.disable()
         self.scene_container.hide()
 
-        ## Settings button is common to all scenes
-        ## TODO: Add rules section to explain basic game rules
-        self.settings_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(SETTINGS_BUTTON_LOCATION, SETTINGS_BUTTON_SIZE),
-            text='',
-            manager=self.ui_manager,
-            container=self.scene_container,
-            object_id=ObjectID(object_id='#settings_button', class_id='@settings_button'))
-        self.settings_menu = pygame_gui.elements.UIPanel(
-            relative_rect=pygame.Rect((
-                self.game.GAME_HALF_WIDTH - SETTINGS_PANEL_SIZE[0] / 2,
-                self.game.GAME_HALF_HEIGHT - SETTINGS_PANEL_SIZE[1] / 2),
-                SETTINGS_PANEL_SIZE),
-            manager=self.ui_manager,
-            container=self.scene_container,
-            starting_height=100,
-            object_id=ObjectID(class_id='@popup_background'))
-        self.leave_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(SETTINGS_LEAVE_BUTTON_LOCATION, SETTINGS_BUTTON_SIZE),
-            text='Leave',
-            manager=self.ui_manager,
-            container=self.settings_menu)
-        self.close_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(SETTINGS_CLOSE_BUTTON_LOCATION, SETTINGS_BUTTON_SIZE),
-            text='Close',
-            manager=self.ui_manager,
-            container=self.settings_menu)
-
     def draw_scene(self):
         self.game.window.fill(BLACK)
         self.ui_manager.draw_ui(self.game.window)
@@ -149,22 +118,6 @@ class Scene:
         This method must be implemented by subclasses.
         """
         raise NotImplementedError("Subclasses must implement 'handle_events(self)'")
-
-    def handle_settings_events(self, event):
-        match event.ui_element:
-            case self.settings_button:
-                self.settings_menu.enable()
-                self.settings_menu.show()
-                return True
-            case self.leave_button:
-                self.settings_menu.disable()
-                self.settings_menu.hide()
-                self.game.change_scene(SceneID.GAME_MENU)
-                return True
-            case self.close_button:
-                self.settings_menu.disable()
-                self.settings_menu.hide()
-                return True
 
     def update(self, time_delta):
         self.update_scene()
@@ -179,8 +132,6 @@ class Scene:
     def open_scene(self):
         self.scene_container.enable()
         self.scene_container.show()
-        self.settings_menu.disable()
-        self.settings_menu.hide()
 
     def close_scene(self):
         self.scene_container.disable()
@@ -198,7 +149,6 @@ class Scene:
 class GameMenu(Scene):
     def __init__(self, game):
         Scene.__init__(self, game)
-        ## TODO: Greet user with their name
         self.title_label = pygame_gui.elements.UILabel(
             relative_rect=pygame.Rect(
                 (self.center_x(TITLE_SIZE[0]), TITLE_Y_LOCATION),
@@ -221,31 +171,79 @@ class GameMenu(Scene):
             text='Blackjack',
             manager=self.ui_manager,
             container=self.scene_container)
+        self.credits_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                (self.center_x(GAME_BUTTON_SIZE[0]), CREDITS_BUTTON_Y_LOCATION),
+                GAME_BUTTON_SIZE),
+            text='Credits',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.credits_panel = pygame_gui.elements.UIPanel(
+            relative_rect=pygame.Rect(
+                (self.game.screen_width / 2 - self.game.GAME_RESOLUTION[0] / 2,
+                 self.game.screen_height / 2 - self.game.GAME_RESOLUTION[1] / 2),
+                self.game.GAME_RESOLUTION),
+            manager=self.ui_manager,
+            starting_height=100,
+            visible=False,
+            container=self.game.canvas,
+            object_id='@credits_panel')
 
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                if Scene.handle_settings_events(self, event):
-                        pass
-                else:
-                    match event.ui_element:
-                        case self.poker_button:
-                            self.game.change_scene(SceneID.POKER)
-                        case self.blackjack_button:
-                            self.game.change_scene(SceneID.BLACKJACK)
+                match event.ui_element:
+                    case self.poker_button:
+                        self.game.change_scene(SceneID.POKER)
+                    case self.blackjack_button:
+                        self.game.change_scene(SceneID.BLACKJACK)
+                    case self.credits_button:
+                        self.play_credits()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE or event.key == pygame.K_RETURN:
+                    self.credits_panel.disable()
+                    self.credits_panel.hide()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    self.credits_panel.disable()
+                    self.credits_panel.hide()
+
+
             self.ui_manager.process_events(event)
 
     def update_scene(self):
         return
 
+    def draw_scene(self):
+        Scene.draw_scene(self)
+
+    def play_credits(self):
+        scrolling_text = "<br>".join(credits.CREDITS_STRINGS)
+        self.credits_panel.enable()
+        self.credits_panel.show()
+        text_box = pygame_gui.elements.UITextBox(
+            html_text=scrolling_text,
+            relative_rect=pygame.Rect(
+                TOP_LEFT,
+                self.game.GAME_RESOLUTION),
+            manager=self.ui_manager,
+            container=self.credits_panel
+        )
+        text_box.set_active_effect(pygame_gui.TEXT_EFFECT_TYPING_APPEAR)
+
 class BlackjackScene(Scene):
     def __init__(self, game):
         Scene.__init__(self, game)
-        self.game_state = BlackjackGameState.SETUP;
+        self.game_state = BlackjackGameState.SETUP
         self.bet_amount = WHITE_CHIP_WORTH
         self.api_response = ""
         self.player_cards = []
         self.blackjack_cards = []
+        self.leave_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(LEAVE_BUTTON_LOCATION, LEAVE_BUTTON_SIZE),
+            text='Leave',
+            manager=self.ui_manager,
+            container=self.scene_container)
         self.deal_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(
                 BLACKJACK_DEAL_BUTTON_LOCATION,
@@ -353,31 +351,31 @@ class BlackjackScene(Scene):
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                if Scene.handle_settings_events(self, event):
-                        pass
-                else:
-                    match event.ui_element:
-                        case self.white_chip:
-                            self.bet_amount = self.bet_amount + WHITE_CHIP_WORTH
-                            self.bet_label.set_text("$" + str(self.bet_amount))
-                        case self.red_chip:
-                            self.bet_amount = self.bet_amount + RED_CHIP_WORTH
-                            self.bet_label.set_text("$" + str(self.bet_amount))
-                        case self.green_chip:
-                            self.bet_amount = self.bet_amount + GREEN_CHIP_WORTH
-                            self.bet_label.set_text("$" + str(self.bet_amount))
-                        case self.blue_chip:
-                            self.bet_amount = self.bet_amount + BLUE_CHIP_WORTH
-                            self.bet_label.set_text("$" + str(self.bet_amount))
-                        case self.black_chip:
-                            self.bet_amount = self.bet_amount + BLACK_CHIP_WORTH
-                            self.bet_label.set_text("$" + str(self.bet_amount))
-                        case self.deal_button:
-                            self.game_state = BlackjackGameState.START_DEAL
-                        case self.hit_button:
-                            self.game_state = BlackjackGameState.GIVE_PLAYER_CARD
-                        case self.stand_button:
-                            self.game_state = BlackjackGameState.PLAYER_STANDS
+                match event.ui_element:
+                    case self.leave_button:
+                        self.game.change_scene(SceneID.GAME_MENU)
+                        return True
+                    case self.white_chip:
+                        self.bet_amount = self.bet_amount + WHITE_CHIP_WORTH
+                        self.bet_label.set_text("$" + str(self.bet_amount))
+                    case self.red_chip:
+                        self.bet_amount = self.bet_amount + RED_CHIP_WORTH
+                        self.bet_label.set_text("$" + str(self.bet_amount))
+                    case self.green_chip:
+                        self.bet_amount = self.bet_amount + GREEN_CHIP_WORTH
+                        self.bet_label.set_text("$" + str(self.bet_amount))
+                    case self.blue_chip:
+                        self.bet_amount = self.bet_amount + BLUE_CHIP_WORTH
+                        self.bet_label.set_text("$" + str(self.bet_amount))
+                    case self.black_chip:
+                        self.bet_amount = self.bet_amount + BLACK_CHIP_WORTH
+                        self.bet_label.set_text("$" + str(self.bet_amount))
+                    case self.deal_button:
+                        self.game_state = BlackjackGameState.START_DEAL
+                    case self.hit_button:
+                        self.game_state = BlackjackGameState.GIVE_PLAYER_CARD
+                    case self.stand_button:
+                        self.game_state = BlackjackGameState.PLAYER_STANDS
             self.ui_manager.process_events(event)
 
     def draw_scene(self):
@@ -568,6 +566,11 @@ class BlackjackScene(Scene):
 class PokerScene(Scene):
     def __init__(self, game):
         Scene.__init__(self, game)
+        self.leave_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(LEAVE_BUTTON_LOCATION, LEAVE_BUTTON_SIZE),
+            text='Leave',
+            manager=self.ui_manager,
+            container=self.scene_container)
         """
         self.place_bet_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect((540 - 75, 540), (150, 50)),
@@ -605,12 +608,12 @@ class PokerScene(Scene):
     def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
-                if Scene.handle_settings_events(self, event):
-                        pass
+                match event.ui_element:
+                    case self.leave_button:
+                        self.game.change_scene(SceneID.GAME_MENU)
+                        return True
                 """
-                else:
-                    match event.ui_element:
-                        ## TODO: base functionality for poker unverified and probably wrong
+                ## TODO: base functionality for poker unverified and probably wrong
                         case self.place_bet_button:
                             ## TODO: Base functionality verification, use as a template to build full functionality
                             payload = {'bet': '10'}

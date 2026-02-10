@@ -184,21 +184,6 @@
             }
         }
     },
-    "@popup_background":
-    {
-        "colours":
-        {
-            "dark_bg": "#0F3460,#1A1A2E,135",
-            "normal_border": "#00000010"
-        },
-        "misc":
-        {
-            "shape": "rounded_rectangle",
-            "shape_corner_radius": "20",
-            "border_width": "1",
-            "shadow_width": "8"
-        }
-    },
     "@blackjack_score":
     {
         "font":
@@ -229,16 +214,6 @@
             "normal_text": "#FF8C00,#FFD700,135",
             "active_text": "#00000000",
             "border_color": "#00000000"
-        }
-    },
-    "#settings_button":
-    {
-        "images":
-        {
-            "normal_image":
-            {
-                "path": "resources/images/Icons/settings_FFECD1_48.png"
-            }
         }
     },
     "#white_chip":
@@ -305,6 +280,21 @@
             "normal_text": "#FF8C00,#FFD700,135",
             "dark_bg": "#0F346050,#1A1A2E50,135",
             "border_color": "#00000000"
+        }
+    },
+    "@credits_panel":
+    {
+        "colours":
+        {
+            "dark_bg": "#0F3460AA,#1A1A2EAA,135",
+            "normal_border": "#00000010"
+        },
+        "misc":
+        {
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "20",
+            "border_width": "0",
+            "shadow_width": "0"
         }
     }
 }
