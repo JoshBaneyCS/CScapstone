@@ -1,249 +1,58 @@
-# =============================================================================
-# KUSTOMIZATION.YAML - STAGING OVERLAY
-# =============================================================================
-# This overlay customizes the base manifests for the STAGING environment.
-#
-# Staging Environment Characteristics:
-# ------------------------------------
-#   - Medium resource limits (between dev and prod)
-#   - 2 replicas for HA testing
-#   - HTTPS required (COOKIE_SECURE=true)
-#   - Info-level logging
-#   - Domain: staging.capstone-groupe.com
-#   - TLS certificates enabled
-#   - HPA enabled (2-10 replicas)
-#   - 10GB PVC for database
-#
-# Usage:
-# ------
-#   # Preview
-#   kubectl kustomize infra/k8s/overlays/staging
-#
-#   # Apply
-#   kubectl apply -k infra/k8s/overlays/staging
-# =============================================================================
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-# =============================================================================
-# BASE REFERENCE
-# =============================================================================
 
 resources:
   - ../../base
 
-# =============================================================================
-# NAMESPACE
-# =============================================================================
-
 namespace: casino-staging
-
-# =============================================================================
-# COMMON LABELS
-# =============================================================================
 
 commonLabels:
   environment: staging
-
-# =============================================================================
-# COMMON ANNOTATIONS
-# =============================================================================
 
 commonAnnotations:
   environment: staging
   description: "Staging deployment of Casino Capstone on staging.capstone-groupe.com"
 
-# =============================================================================
-# IMAGES
-# =============================================================================
-# Use staging image tags
-
 images:
-  - name: casino-backend
-    newName: ghcr.io/joshbaneycs/cscapstone/backend
-    newTag: staging
-
-  - name: casino-frontend
-    newName: ghcr.io/joshbaneycs/cscapstone/frontend
-    newTag: staging
-
-  - name: casino-game-service
-    newName: ghcr.io/joshbaneycs/cscapstone/game-service
-    newTag: staging
-
-  - name: postgres
-    newName: postgres
-    newTag: "16-alpine"
-
-# =============================================================================
-# CONFIGMAP CUSTOMIZATION
-# =============================================================================
+  - name: capstone
+    newName: ghcr.io/joshbaneycs/capstone-staging
+    newTag: latest
 
 configMapGenerator:
-  - name: backend-config
+  - name: capstone-config
     behavior: merge
     literals:
       - APP_ENV=staging
       - LOG_LEVEL=info
       - LOG_FORMAT=json
-      - LOG_CALLER=false
       - COOKIE_SECURE=true
       - FRONTEND_URL=https://staging.capstone-groupe.com
-      - CORS_ALLOWED_ORIGINS=https://staging.capstone-groupe.com
-      - DEBUG_ENDPOINTS_ENABLED=false
-      - RATE_LIMIT_RPM=50
-      - RATE_LIMIT_BURST=10
-      - DB_MAX_CONNECTIONS=25
-      - DB_MIN_CONNECTIONS=5
-
-  - name: game-service-config
-    behavior: merge
-    literals:
-      - frontend-url=https://staging.capstone-groupe.com
-
-# =============================================================================
-# PATCHES - STAGING REPLICAS
-# =============================================================================
 
 patches:
-  # Backend - 2 replicas for staging
+  # 2 replicas for staging
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: backend
+        name: capstone
       spec:
         replicas: 2
     target:
       kind: Deployment
-      name: backend
+      name: capstone
 
-  # Frontend - 2 replicas for staging
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: frontend
-      spec:
-        replicas: 2
-    target:
-      kind: Deployment
-      name: frontend
-
-  # Game Service - 2 replicas for staging
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: game-service
-      spec:
-        replicas: 2
-    target:
-      kind: Deployment
-      name: game-service
-
-# =============================================================================
-# PATCHES - STAGING RESOURCE LIMITS
-# =============================================================================
-
-  # Backend resources - staging
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: backend
-      spec:
-        template:
-          spec:
-            containers:
-              - name: backend
-                resources:
-                  requests:
-                    cpu: "100m"
-                    memory: "128Mi"
-                  limits:
-                    cpu: "500m"
-                    memory: "512Mi"
-    target:
-      kind: Deployment
-      name: backend
-
-  # Frontend resources - staging
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: frontend
-      spec:
-        template:
-          spec:
-            containers:
-              - name: frontend
-                resources:
-                  requests:
-                    cpu: "50m"
-                    memory: "64Mi"
-                  limits:
-                    cpu: "250m"
-                    memory: "128Mi"
-    target:
-      kind: Deployment
-      name: frontend
-
-  # PostgreSQL resources - staging
-  - patch: |-
-      apiVersion: apps/v1
-      kind: StatefulSet
-      metadata:
-        name: postgres
-      spec:
-        template:
-          spec:
-            containers:
-              - name: postgres
-                resources:
-                  requests:
-                    cpu: "250m"
-                    memory: "512Mi"
-                  limits:
-                    cpu: "1000m"
-                    memory: "1Gi"
-    target:
-      kind: StatefulSet
-      name: postgres
-
-# =============================================================================
-# PATCHES - STAGING PVC SIZE
-# =============================================================================
-
-  - patch: |-
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: postgres-pvc
-      spec:
-        resources:
-          requests:
-            storage: 10Gi
-    target:
-      kind: PersistentVolumeClaim
-      name: postgres-pvc
-
-# =============================================================================
-# PATCHES - STAGING INGRESS
-# =============================================================================
-
+  # Staging ingress
   - patch: |-
       apiVersion: networking.k8s.io/v1
       kind: Ingress
       metadata:
         name: casino-ingress
         annotations:
-          nginx.ingress.kubernetes.io/ssl-redirect: "true"
-          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-          cert-manager.io/cluster-issuer: "letsencrypt-staging"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.tls: "true"
       spec:
+        ingressClassName: traefik
         tls:
           - hosts:
               - staging.capstone-groupe.com
@@ -252,121 +61,13 @@ patches:
           - host: staging.capstone-groupe.com
             http:
               paths:
-                - path: /api
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
-                - path: /health
-                  pathType: Exact
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
-                - path: /ws/game
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: game-service
-                      port:
-                        number: 8000
                 - path: /
                   pathType: Prefix
                   backend:
                     service:
-                      name: frontend
+                      name: capstone
                       port:
                         number: 80
     target:
       kind: Ingress
       name: casino-ingress
-
-# =============================================================================
-# PATCHES - STAGING HPA
-# =============================================================================
-
-  - patch: |-
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: backend-hpa
-      spec:
-        minReplicas: 2
-        maxReplicas: 10
-        metrics:
-          - type: Resource
-            resource:
-              name: cpu
-              target:
-                type: Utilization
-                averageUtilization: 70
-    target:
-      kind: HorizontalPodAutoscaler
-      name: backend-hpa
-
-  - patch: |-
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: frontend-hpa
-      spec:
-        minReplicas: 2
-        maxReplicas: 8
-        metrics:
-          - type: Resource
-            resource:
-              name: cpu
-              target:
-                type: Utilization
-                averageUtilization: 70
-    target:
-      kind: HorizontalPodAutoscaler
-      name: frontend-hpa
-
-  - patch: |-
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: game-service-hpa
-      spec:
-        minReplicas: 2
-        maxReplicas: 10
-        metrics:
-          - type: Resource
-            resource:
-              name: cpu
-              target:
-                type: Utilization
-                averageUtilization: 70
-    target:
-      kind: HorizontalPodAutoscaler
-      name: game-service-hpa
-
-# =============================================================================
-# PATCHES - STAGING PDB
-# =============================================================================
-
-  - patch: |-
-      apiVersion: policy/v1
-      kind: PodDisruptionBudget
-      metadata:
-        name: backend-pdb
-      spec:
-        minAvailable: 1
-    target:
-      kind: PodDisruptionBudget
-      name: backend-pdb
-
-  - patch: |-
-      apiVersion: policy/v1
-      kind: PodDisruptionBudget
-      metadata:
-        name: frontend-pdb
-      spec:
-        minAvailable: 1
-    target:
-      kind: PodDisruptionBudget
-      name: frontend-pdb

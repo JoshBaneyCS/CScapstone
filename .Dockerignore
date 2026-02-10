@@ -1,5 +1,6 @@
 .git
 .gitignore
+.github/
 .env
 .env.*
 secrets/
@@ -25,3 +26,10 @@ yarn-error.log*
 .idea/
 .vscode/
 *.swp
+infra/
+dev-testing/
+frontend/
+database/
+*.md
+INTEGRATION.md
+README.md
