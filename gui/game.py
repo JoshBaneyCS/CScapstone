@@ -35,6 +35,7 @@ class Game:
         #self.window =  pygame.display.set_mode(self.GAME_RESOLUTION, pygame.SCALED | pygame.FULLSCREEN)
         self.window = pygame.display.set_mode(screen_resolution, pygame.FULLSCREEN)
         self.ui_manager = pygame_gui.UIManager(screen_resolution)
+        self.time_delta = 0
         self.canvas = pygame_gui.elements.UIPanel(
             relative_rect=pygame.Rect(self.CANVAS_ORIGIN_LOCATION, screen_resolution),
             manager=self.ui_manager,
@@ -50,14 +51,15 @@ class Game:
             SceneID.BLACKJACK: BlackjackScene(self),
             SceneID.POKER: PokerScene(self)
         }
+
         self.current_scene = self.scenes[SceneID.GAME_MENU]
         self.current_scene.open_scene()
 
     def game_loop(self):
         while self.is_playing:
-            time_delta = self.clock.tick(self.FRAMES_PER_SECOND) / 1000.0
+            self.time_delta = self.clock.tick(self.FRAMES_PER_SECOND) / 1000.0
             self.current_scene.handle_events()
-            self.current_scene.update(time_delta)
+            self.current_scene.update(self.time_delta)
             self.current_scene.draw_scene()
 
     def change_scene(self, scene_id):

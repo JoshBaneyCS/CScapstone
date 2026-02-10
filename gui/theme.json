@@ -2,8 +2,10 @@
     "colors": {
         "dark_background": "#001524"
     },
-    "defaults": {
-        "colours": {
+    "defaults":
+    {
+        "colours":
+        {
             "normal_bg": "#001524",
             "hovered_bg": "#14616D",
             "disabled_bg": "#001524",
@@ -18,7 +20,8 @@
             "border": "#14616D"
         }
     },
-    "label": {
+    "label":
+    {
         "font":
         {
             "name": "googlesans_regular",
@@ -26,14 +29,16 @@
             "bold" : "0",
             "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
         },
-        "colours": {
+        "colours":
+        {
             "normal_bg": "#00000000",
             "hovered_bg": "#00000000",
             "active_bg": "#00000000",
             "normal_text": "#000000"
         }
     },
-    "button": {
+    "button":
+    {
         "font":
         {
             "name": "googlesans_regular",
@@ -41,7 +46,8 @@
             "bold" : "0",
             "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
         },
-        "colours": {
+        "colours":
+        {
             "normal_bg": "#FF8C00,#FFD700,135",
             "hovered_bg": "#FF8C00,#FFD700,135",
             "normal_border": "#00000000",
@@ -62,7 +68,8 @@
             }
         }
     },
-    "text_box": {
+    "text_box":
+    {
         "font":
         {
             "name": "googlesans_regular",
@@ -71,55 +78,65 @@
             "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
         }
     },
-    "panel": {
-        "colours": {
+    "panel":
+    {
+        "colours":
+        {
             "normal_bg": "#001524"
         }
     },
-    "@screen_background": {
-        "misc": {
+    "@screen_background":
+    {
+        "misc":
+        {
             "auto_scale_images": "1"
         },
-        "images": {
-            "background_image": {
+        "images":
+        {
+            "background_image":
+            {
                 "path": "resources/images/green_background.jpg"
             }
         }
     },
-    "@menu_background": {
-        "misc": {
+    "@menu_background":
+    {
+        "misc":
+        {
             "auto_scale_images": "1",
             "shape": "rounded_rectangle",
             "shape_corner_radius": "10",
             "border_width": "2"
         }
     },
-    "@card_container": {
-        "colours": {
+    "@card_container":
+    {
+        "colours":
+        {
             "dark_bg": "#00000000",
             "border_color": "#00000000"
         },
-        "misc": {
+        "misc":
+        {
             "auto_scale_images": "1",
             "border_width": "0"
         }
     },
-    "@card": {
-        "colours": {
+    "@card":
+    {
+        "colours":
+        {
             "border_color": "#00000000"
         },
-        "misc": {
+        "misc":
+        {
             "border_width": "0"
         }
     },
-    "#settings_button":
+    "@settings_button":
     {
-        "images": {
-            "normal_image": {
-                "path": "resources/images/Icons/settings_FFECD1_48.png"
-            }
-        },
-        "colours": {
+        "colours":
+        {
             "normal_bg": "#00000000",
             "hovered_bg": "#00000000",
             "clicked_bg": "#00000000",
@@ -132,34 +149,161 @@
             "active_text": "#00000000",
             "border_color": "#00000000"
         },
-        "misc": {
+        "misc":
+        {
           "auto_scale_images": "1",
           "border_width": "0"
         }
     },
-    "#settings_menu": {
-        "colours": {
+    "@chip_button":
+    {
+        "colours":
+        {
+            "normal_bg": "#00000000",
+            "hovered_bg": "#FF8C00,#FFD700,135",
+            "clicked_bg": "#00000000",
+            "selected_bg": "#00000000",
+            "active_bg": "#00000000",
+            "normal_border": "#00000000",
+            "hovered_border": "#00000000",
+            "clicked_border": "#00000000",
+            "normal_text": "#000000",
+            "active_text": "#000000",
+            "border_color": "#00000000"
+        },
+        "misc":
+        {
+          "auto_scale_images": "1",
+          "border_width": "0"
+        },
+        "hovered":
+        {
+            "misc":
+            {
+                "border_width": "20"
+            }
+        }
+    },
+    "@popup_background":
+    {
+        "colours":
+        {
             "dark_bg": "#0F3460,#1A1A2E,135",
             "normal_border": "#00000010"
         },
-        "misc": {
+        "misc":
+        {
             "shape": "rounded_rectangle",
             "shape_corner_radius": "20",
             "border_width": "1",
             "shadow_width": "8"
         }
     },
+    "@blackjack_score":
+    {
+        "font":
+        {
+            "name": "googlesans_regular",
+            "size": "42",
+            "bold": "0",
+            "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        },
+        "colours":
+        {
+            "normal_text": "#FF8C00,#FFD700,135",
+            "dark_bg": "#0F346050,#1A1A2E50,135",
+            "border_color": "#00000000"
+        }
+    },
     "#title_label":
     {
-        "font": {
+        "font":
+        {
             "name": "limelight",
             "size": "92",
             "bold" : "0",
             "regular_path": "resources/fonts/Limelight-Regular.ttf"
         },
-        "colours": {
+        "colours":
+        {
             "normal_text": "#FF8C00,#FFD700,135",
             "active_text": "#00000000",
+            "border_color": "#00000000"
+        }
+    },
+    "#settings_button":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Icons/settings_FFECD1_48.png"
+            }
+        }
+    },
+    "#white_chip":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Chips/white_chip.png"
+            }
+        }
+    },
+    "#red_chip":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Chips/red_chip.png"
+            }
+        }
+    },
+    "#green_chip":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Chips/green_chip.png"
+            }
+        }
+    },
+    "#blue_chip":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Chips/blue_chip.png"
+            }
+        }
+    },
+    "#black_chip":
+    {
+        "images":
+        {
+            "normal_image":
+            {
+                "path": "resources/images/Chips/black_chip.png"
+            }
+        }
+    },
+    "#bet_amount":
+    {
+        "font":
+        {
+            "name": "googlesans_regular",
+            "size": "42",
+            "bold" : "0",
+            "regular_path": "resources/fonts/GoogleSansCode-Regular.ttf"
+        },
+        "colours":
+        {
+            "normal_text": "#FF8C00,#FFD700,135",
+            "dark_bg": "#0F346050,#1A1A2E50,135",
             "border_color": "#00000000"
         }
     }

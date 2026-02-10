@@ -8,7 +8,8 @@ CARD_HEIGHT = 215
 CARD_SIZE = (CARD_WIDTH, CARD_HEIGHT)
 FLIP_SIZE_DELTA = 8
 FLIP_X_DELTA = 4
-
+CARD_MOVE_SPEED = 1
+MOVE_DURATION = 2.0
 
 class Card:
 
@@ -16,10 +17,13 @@ class Card:
         self.front_surface: pygame.Surface = None
         self.back_surface: pygame.Surface = None
         self.flipping, self.flipped, self.front_showing = False, False, False
-        self.location = location
+        self.moving, self.move_then_flip = False, False
+        self.start_location = pygame.Vector2(location)
+        self.target_location = pygame.Vector2(0,0)
+        self.move_time = 0.0
         self.scene = scene
         self.card_container = pygame_gui.elements.UIPanel(
-            relative_rect=pygame.Rect(self.location, (CARD_WIDTH+4, CARD_HEIGHT+4)),
+            relative_rect=pygame.Rect(location, (CARD_WIDTH+4, CARD_HEIGHT+4)),
             manager=self.scene.ui_manager,
             starting_height=0,
             container=self.scene.scene_container,
@@ -45,6 +49,7 @@ class Card:
         self.back_surface = pygame.transform.scale(back_image, CARD_SIZE)
 
     def change_card_image(self, card_surface, size_change, position_change):
+        self.image.kill()
         new_x = self.image.relative_rect.x + position_change
         new_location = (new_x, 0)
         new_width = self.image.relative_rect.width + size_change
@@ -77,3 +82,17 @@ class Card:
                 self.change_card_image(self.back_surface, FLIP_SIZE_DELTA, -FLIP_X_DELTA)
                 if self.image.relative_rect.width >= CARD_WIDTH:
                     self.flipped, self.flipping = False, False
+
+    def move_card(self):
+        self.move_time += self.scene.game.time_delta
+        alpha = min(self.move_time / MOVE_DURATION, 1.0)
+
+        new_position = self.start_location.lerp(self.target_location, alpha)
+        self.card_container.set_position(new_position)
+
+        if alpha >= 1.0:
+            self.moving = False
+            self.start_location = pygame.Vector2(new_position)
+            if self.move_then_flip:
+                self.move_then_flip = False
+                self.flipping = True

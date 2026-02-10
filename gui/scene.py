@@ -12,8 +12,32 @@ class SceneID(Enum):
     BLACKJACK = 2
     POKER = 3
 
+class BlackjackGameState(Enum):
+    SETUP = 0
+    PRE_DEAL = 1
+    START_DEAL = 2
+    DEALING = 3
+    DEALT = 4
+    PLAYER_TURN = 5
+    GIVE_PLAYER_CARD = 6
+    WAITING_PLAYER_CARD = 7
+    RESOLVING_HIT = 8
+    PLAYER_STANDS = 9
+    DEALER_FLIPS = 10
+    WAITING_DEALER_CARD = 11
+    DEALER_TURN = 12
+    GIVE_DEALER_CARD = 13
+    GAME_OVER = 12
+
 # ----- Globals/Constants -----
+## Common
 BLACK = (0,0,0)
+
+WHITE_CHIP_WORTH = 1
+RED_CHIP_WORTH = 5
+GREEN_CHIP_WORTH = 25
+BLUE_CHIP_WORTH = 50
+BLACK_CHIP_WORTH = 100
 
 ## Scene
 SETTINGS_BUTTON_SIZE = (50, 50)
@@ -36,15 +60,28 @@ BLACKJACK_BUTTON_Y_LOCATION = 580
 
 ## Blackjack
 BLACKJACK_BUTTON_SIZE = (150, 50)
-BLACKJACK_HIT_BUTTON_X_DELTA = 225
-BLACKJACK_STAND_BUTTON_X_DELTA = -75
-BLACKJACK_ACTION_BUTTON_Y = 900
-BET_BUTTON_LOCATION = (540 - BLACKJACK_BUTTON_SIZE[0] / 2, 540)
-BLACKJACK_PLAYER_SCORE_SIZE = (50, 50)
-BLACKJACK_PLAYER_SCORE_Y = 850
-BLACKJACK_DECK_LOCATION = (1575, 130)
-BLACKJACK_PLAYER_LOCATION = (840, 360)
-BLACKJACK_DEALER_LOCATION = (840, 710)
+BLACKJACK_HIT_BUTTON_X_DELTA = 400
+BLACKJACK_STAND_BUTTON_X_DELTA = -400
+BLACKJACK_ACTION_BUTTON_Y = 540
+BLACKJACK_BET_AMOUNT_SIZE = (200, 55)
+BLACKJACK_BET_AMOUNT_LOCATION = (200 - BLACKJACK_BET_AMOUNT_SIZE[0] / 2, 600)
+BLACKJACK_DEAL_BUTTON_LOCATION = (400 - BLACKJACK_BUTTON_SIZE[0] / 2, 600)
+BLACKJACK_RESET_BUTTON_LOCATION = (560 - BLACKJACK_BUTTON_SIZE[0] / 2, 600)
+BLACKJACK_CHIP_CONTAINER_SIZE = (620, 420)
+BLACKJACK_CHIP_CONTAINER_LOCATION = (50, 1080 - BLACKJACK_CHIP_CONTAINER_SIZE[1] - 10)
+BLACKJACK_CHIP_SIZE = (200, 200)
+BLACKJACK_WHITE_CHIP_LOCATION = (0, 0)
+BLACKJACK_RED_CHIP_LOCATION = (200, 0)
+BLACKJACK_GREEN_CHIP_LOCATION = (400, 0)
+BLACKJACK_BLUE_CHIP_LOCATION = (100, 200)
+BLACKJACK_BLACK_CHIP_LOCATION = (300, 200)
+BLACKJACK_SCORE_SIZE = (55, 55)
+BLACKJACK_PLAYER_SCORE_LOCATION = (1400, 740)
+BLACKJACK_DEALER_SCORE_LOCATION = (1400, 340)
+BLACKJACK_CARD_START_LOCATION = (2000, -200)
+BLACKJACK_PLAYER_LOCATION = (900, 650)
+BLACKJACK_DEALER_LOCATION = (900, 270)
+BLACKJACK_CARD_HELD_OFFSET = 50
 
 ## Poker
 POKER_DECK_LOCATION = (1575, 130)
@@ -79,7 +116,7 @@ class Scene:
             text='',
             manager=self.ui_manager,
             container=self.scene_container,
-            object_id='#settings_button')
+            object_id=ObjectID(object_id='#settings_button', class_id='@settings_button'))
         self.settings_menu = pygame_gui.elements.UIPanel(
             relative_rect=pygame.Rect((
                 self.game.GAME_HALF_WIDTH - SETTINGS_PANEL_SIZE[0] / 2,
@@ -88,7 +125,7 @@ class Scene:
             manager=self.ui_manager,
             container=self.scene_container,
             starting_height=100,
-            object_id='#settings_menu')
+            object_id=ObjectID(class_id='@popup_background'))
         self.leave_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(SETTINGS_LEAVE_BUTTON_LOCATION, SETTINGS_BUTTON_SIZE),
             text='Leave',
@@ -130,7 +167,14 @@ class Scene:
                 return True
 
     def update(self, time_delta):
+        self.update_scene()
         self.ui_manager.update(time_delta)
+
+    def update_scene(self):
+        """
+        This method must be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement 'handle_events(self)'")
 
     def open_scene(self):
         self.scene_container.enable()
@@ -191,23 +235,94 @@ class GameMenu(Scene):
                             self.game.change_scene(SceneID.BLACKJACK)
             self.ui_manager.process_events(event)
 
+    def update_scene(self):
+        return
+
 class BlackjackScene(Scene):
     def __init__(self, game):
         Scene.__init__(self, game)
-        self.place_bet_button = pygame_gui.elements.UIButton(
+        self.game_state = BlackjackGameState.SETUP;
+        self.bet_amount = WHITE_CHIP_WORTH
+        self.api_response = ""
+        self.player_cards = []
+        self.blackjack_cards = []
+        self.deal_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(
-                BET_BUTTON_LOCATION,
+                BLACKJACK_DEAL_BUTTON_LOCATION,
                 BLACKJACK_BUTTON_SIZE),
-            text='Place Bet',
+            text='Deal',
             manager=self.ui_manager,
             container=self.scene_container)
-        ## TODO: add text-box that enables user to place a custom bet amount
+        self.reset_button = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_RESET_BUTTON_LOCATION,
+                BLACKJACK_BUTTON_SIZE),
+            text='Reset',
+            manager=self.ui_manager,
+            container=self.scene_container)
+        self.bet_label = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(
+                BLACKJACK_BET_AMOUNT_LOCATION,
+                BLACKJACK_BET_AMOUNT_SIZE),
+            text="$" + str(self.bet_amount),
+            manager=self.ui_manager,
+            container=self.scene_container,
+            object_id="#bet_amount")
+        self.chip_container = pygame_gui.elements.UIPanel(
+            relative_rect=pygame.Rect(
+                BLACKJACK_CHIP_CONTAINER_LOCATION,
+                BLACKJACK_CHIP_CONTAINER_SIZE),
+            manager=self.ui_manager,
+            container=self.scene_container,
+            starting_height=90,
+            object_id=ObjectID(class_id='@popup_background'))
+        self.white_chip = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_WHITE_CHIP_LOCATION,
+                BLACKJACK_CHIP_SIZE),
+            text=str(WHITE_CHIP_WORTH),
+            manager=self.ui_manager,
+            container=self.chip_container,
+        object_id = ObjectID(object_id='#white_chip', class_id='@chip_button'))
+        self.red_chip = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_RED_CHIP_LOCATION,
+                BLACKJACK_CHIP_SIZE),
+            text=str(RED_CHIP_WORTH),
+            manager=self.ui_manager,
+            container=self.chip_container,
+        object_id = ObjectID(object_id='#red_chip', class_id='@chip_button'))
+        self.green_chip = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_GREEN_CHIP_LOCATION,
+                BLACKJACK_CHIP_SIZE),
+            text=str(GREEN_CHIP_WORTH),
+            manager=self.ui_manager,
+            container=self.chip_container,
+        object_id = ObjectID(object_id='#green_chip', class_id='@chip_button'))
+        self.blue_chip = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_BLUE_CHIP_LOCATION,
+                BLACKJACK_CHIP_SIZE),
+            text=str(BLUE_CHIP_WORTH),
+            manager=self.ui_manager,
+            container=self.chip_container,
+        object_id = ObjectID(object_id='#blue_chip', class_id='@chip_button'))
+        self.black_chip = pygame_gui.elements.UIButton(
+            relative_rect=pygame.Rect(
+                BLACKJACK_BLACK_CHIP_LOCATION,
+                BLACKJACK_CHIP_SIZE),
+            text=str(BLACK_CHIP_WORTH),
+            manager=self.ui_manager,
+            container=self.chip_container,
+        object_id = ObjectID(object_id='#black_chip', class_id='@chip_button'))
         self.hit_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(
                 (self.center_x(BLACKJACK_HIT_BUTTON_X_DELTA), BLACKJACK_ACTION_BUTTON_Y),
                 BLACKJACK_BUTTON_SIZE),
             text='Hit',
             manager=self.ui_manager,
+            visible=False,
             container=self.scene_container)
         self.stand_button = pygame_gui.elements.UIButton(
             relative_rect=pygame.Rect(
@@ -218,20 +333,22 @@ class BlackjackScene(Scene):
             container=self.scene_container)
         self.player_score = pygame_gui.elements.UILabel(
             relative_rect=pygame.Rect(
-                (self.center_x(-BLACKJACK_PLAYER_SCORE_SIZE[0]), BLACKJACK_PLAYER_SCORE_Y),
-                BLACKJACK_PLAYER_SCORE_SIZE),
+                BLACKJACK_PLAYER_SCORE_LOCATION,
+                BLACKJACK_SCORE_SIZE),
             text='0',
             manager=self.ui_manager,
-            container=self.scene_container)
-        ## TODO: add dealer score label
+            container=self.scene_container,
+            object_id="@blackjack_score")
+        self.dealer_score = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(
+                BLACKJACK_DEALER_SCORE_LOCATION,
+                BLACKJACK_SCORE_SIZE),
+            text='0',
+            manager=self.ui_manager,
+            container=self.scene_container,
+            object_id="@blackjack_score")
 
-        self.deck = Card(self, BLACKJACK_DECK_LOCATION)
-        self.player_cards = [ Card(self, BLACKJACK_DECK_LOCATION), Card(self, BLACKJACK_DECK_LOCATION) ]
-        self.dealer_cards = [ Card(self, BLACKJACK_DECK_LOCATION), Card(self, BLACKJACK_DECK_LOCATION) ]
-
-        self.blackjack_cards = self.player_cards.copy()
-        self.blackjack_cards.append(self.deck)
-        self.blackjack_cards.extend(self.dealer_cards)
+        self.reset_board()
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -240,28 +357,213 @@ class BlackjackScene(Scene):
                         pass
                 else:
                     match event.ui_element:
-                        case self.place_bet_button:
-                            ## TODO: Base functionality verification, use as a template to build full functionality
-                            payload = {'bet': '10'}
-                            result = requests.post('http://blackjack-api:8000/blackjack/start', data=json.dumps(payload))
-                            print(result.text)
+                        case self.white_chip:
+                            self.bet_amount = self.bet_amount + WHITE_CHIP_WORTH
+                            self.bet_label.set_text("$" + str(self.bet_amount))
+                        case self.red_chip:
+                            self.bet_amount = self.bet_amount + RED_CHIP_WORTH
+                            self.bet_label.set_text("$" + str(self.bet_amount))
+                        case self.green_chip:
+                            self.bet_amount = self.bet_amount + GREEN_CHIP_WORTH
+                            self.bet_label.set_text("$" + str(self.bet_amount))
+                        case self.blue_chip:
+                            self.bet_amount = self.bet_amount + BLUE_CHIP_WORTH
+                            self.bet_label.set_text("$" + str(self.bet_amount))
+                        case self.black_chip:
+                            self.bet_amount = self.bet_amount + BLACK_CHIP_WORTH
+                            self.bet_label.set_text("$" + str(self.bet_amount))
+                        case self.deal_button:
+                            self.game_state = BlackjackGameState.START_DEAL
                         case self.hit_button:
-                            ## TODO: Base functionality verification, use as a template to build full functionality
-                            result = requests.post('http://blackjack-api:8000/blackjack/hit')
-                            print(result.text)
+                            self.game_state = BlackjackGameState.GIVE_PLAYER_CARD
                         case self.stand_button:
-                            ## TODO: Base functionality verification, use as a template to build full functionality
-                            result = requests.post('http://blackjack-api:8000/blackjack/stand')
-                            print(result.text)
+                            self.game_state = BlackjackGameState.PLAYER_STANDS
             self.ui_manager.process_events(event)
 
     def draw_scene(self):
         ## Called once per frame, but there should only be 4-10 cards to check
         # and only 1-2 will be flipping at a time
         for card in self.blackjack_cards:
+            if card.moving:
+                card.move_card()
             if card.flipping:
                 card.flip_card()
         Scene.draw_scene(self)
+
+    def update_scene(self):
+        match self.game_state:
+            case BlackjackGameState.SETUP:
+                self.hit_button.disable()
+                self.stand_button.disable()
+                self.player_score.hide()
+                self.dealer_score.hide()
+                self.game_state = BlackjackGameState.PRE_DEAL
+            case BlackjackGameState.PRE_DEAL:
+                return
+            case BlackjackGameState.START_DEAL:
+                self.deal_blackjack()
+            case BlackjackGameState.DEALING:
+                for card in self.blackjack_cards:
+                    if card.moving or card.flipping:
+                        return
+                self.game_state = BlackjackGameState.DEALT
+            case BlackjackGameState.DEALT:
+                self.hit_button.enable()
+                self.stand_button.enable()
+                self.player_score.show()
+                self.dealer_score.show()
+                self.game_state = BlackjackGameState.PLAYER_TURN
+            case BlackjackGameState.PLAYER_TURN:
+                return
+            case BlackjackGameState.GIVE_PLAYER_CARD:
+                self.give_player_card()
+            case BlackjackGameState.WAITING_PLAYER_CARD:
+                for card in self.player_cards:
+                    if card.moving or card.flipping:
+                        return
+                self.game_state = BlackjackGameState.RESOLVING_HIT
+            case BlackjackGameState.RESOLVING_HIT:
+                self.resolve_hit()
+            case BlackjackGameState.PLAYER_STANDS:
+                self.player_stands()
+            case BlackjackGameState.WAITING_DEALER_CARD:
+                for card in self.dealer_cards:
+                    if card.moving or card.flipping:
+                        return
+                self.game_state = BlackjackGameState.DEALER_TURN
+            case BlackjackGameState.DEALER_TURN:
+                self.dealer_turn()
+
+    def reset_board(self):
+
+        for card in self.blackjack_cards:
+            card.image.kill()
+
+        self.player_cards = [
+            Card(self, BLACKJACK_CARD_START_LOCATION),
+            Card(self, BLACKJACK_CARD_START_LOCATION) ]
+        self.dealer_cards = [
+            Card(self, BLACKJACK_CARD_START_LOCATION),
+            Card(self, BLACKJACK_CARD_START_LOCATION) ]
+
+        self.blackjack_cards = self.player_cards.copy()
+        self.blackjack_cards.extend(self.dealer_cards)
+
+        self.player_score.set_text("0")
+        self.dealer_score.set_text("0")
+
+    def deal_blackjack(self):
+        self.reset_board()
+        self.deal_button.disable()
+        self.reset_button.disable()
+        self.chip_container.disable()
+        payload = {'bet': str(self.bet_amount)}
+        response = requests.post('http://blackjack-api:8000/blackjack/start', data=json.dumps(payload))
+        data = response.json()
+        self.player_cards[0].set_front(data["player_hand"][0])
+        self.player_cards[1].set_front(data["player_hand"][1])
+        self.player_cards[0].target_location = pygame.Vector2(BLACKJACK_PLAYER_LOCATION)
+        self.player_cards[1].target_location = pygame.Vector2(
+            BLACKJACK_PLAYER_LOCATION[0] + 50, BLACKJACK_PLAYER_LOCATION[1])
+        self.player_cards[0].moving = True
+        self.player_cards[1].moving = True
+        self.player_cards[0].move_then_flip = True
+        self.player_cards[1].move_then_flip = True
+        self.dealer_cards[0].set_front(data["dealer_hand"][0])
+        self.dealer_cards[1].set_front(data["dealer_hand"][1])
+        self.dealer_cards[0].target_location = pygame.Vector2(BLACKJACK_DEALER_LOCATION)
+        self.dealer_cards[1].target_location = pygame.Vector2(
+            BLACKJACK_DEALER_LOCATION[0] + 50, BLACKJACK_DEALER_LOCATION[1])
+        self.dealer_cards[0].moving = True
+        self.dealer_cards[1].moving = True
+        self.dealer_cards[1].move_then_flip = True
+        self.player_score.set_text(str(data["player_total"]))
+        ## TODO: only count score from card showing, update later when dealers card flips
+        self.dealer_score.set_text(str(data["dealer_total"]))
+
+        self.check_for_blackjack()
+
+    def check_for_blackjack(self):
+        ## check for blackjack
+        response = requests.get('http://blackjack-api:8000/blackjack/state')
+        data = response.json()
+        match data["status"]:
+            case "dealer_win":
+                self.end_game_early()
+            case "player_win":
+                self.end_game_early()
+            case _:
+                self.game_state = BlackjackGameState.DEALING
+
+    def give_player_card(self):
+        self.hit_button.disable()
+        self.stand_button.disable()
+        response = requests.post('http://blackjack-api:8000/blackjack/hit')
+        data = response.json()
+        new_card = Card(self, BLACKJACK_CARD_START_LOCATION)
+        self.player_cards.append(new_card)
+        self.blackjack_cards.append(self.player_cards[-1])
+        self.player_cards[-1].set_front(data["player_hand"][-1])
+        self.player_cards[-1].target_location = pygame.Vector2(
+            BLACKJACK_PLAYER_LOCATION[0] + BLACKJACK_CARD_HELD_OFFSET * (len(self.player_cards) - 1),
+            BLACKJACK_PLAYER_LOCATION[1])
+        self.player_cards[-1].moving = True
+        self.player_cards[-1].move_then_flip = True
+        self.player_score.set_text(str(data["player_total"]))
+        self.game_state = BlackjackGameState.RESOLVING_HIT
+
+    def resolve_hit(self):
+        response = requests.get('http://blackjack-api:8000/blackjack/state')
+        data = response.json()
+        match data["status"]:
+            ## TODO: add game over animations to game_over gs
+            case "player_bust":
+                self.end_game_early()
+            case "player_win":
+                self.end_game_early()
+            case "in_progress":
+                self.hit_button.enable()
+                self.stand_button.enable()
+                self.game_state = BlackjackGameState.PLAYER_TURN
+
+    def player_stands(self):
+        self.hit_button.disable()
+        self.stand_button.disable()
+        self.dealer_cards[0].flipping = True
+        self.game_state = BlackjackGameState.WAITING_DEALER_CARD
+
+    def dealer_turn(self):
+        response = requests.post('http://blackjack-api:8000/blackjack/stand')
+        data = response.json()
+        if len(self.dealer_cards) < len(data["dealer_hand"]):
+            new_index = len(self.dealer_cards)
+            new_card = Card(self, BLACKJACK_CARD_START_LOCATION)
+            self.dealer_cards.append(new_card)
+            self.blackjack_cards.append(self.dealer_cards[-1])
+            self.dealer_cards[-1].set_front(data["dealer_hand"][new_index])
+            self.dealer_cards[-1].target_location = pygame.Vector2(
+                BLACKJACK_DEALER_LOCATION[0] + BLACKJACK_CARD_HELD_OFFSET * (len(self.dealer_cards) - 1),
+                BLACKJACK_DEALER_LOCATION[1])
+            self.dealer_cards[-1].moving = True
+            self.dealer_cards[-1].move_then_flip = True
+            ## TODO: update dealer score 1 card at a time
+            self.dealer_score.set_text(str(data["dealer_total"]))
+            self.game_state = BlackjackGameState.WAITING_DEALER_CARD
+        else:
+            ## TODO: add game over animations to game_over gs
+            self.game_state = BlackjackGameState.PRE_DEAL
+
+    def end_game_early(self):
+        self.hit_button.disable()
+        self.stand_button.disable()
+        self.deal_button.enable()
+        self.reset_button.enable()
+        self.white_chip.enable()
+        self.red_chip.enable()
+        self.green_chip.enable()
+        self.blue_chip.enable()
+        self.black_chip.enable()
+        self.game_state = BlackjackGameState.PRE_DEAL
 
 class PokerScene(Scene):
     def __init__(self, game):
