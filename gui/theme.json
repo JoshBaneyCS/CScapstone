@@ -282,7 +282,7 @@
             "border_color": "#00000000"
         }
     },
-    "@credits_panel":
+    "#credits_panel":
     {
         "colours":
         {
@@ -295,6 +295,20 @@
             "shape_corner_radius": "20",
             "border_width": "0",
             "shadow_width": "0"
+        }
+    },
+    "#credits_text_box":
+    {
+        "colours":
+        {
+            "dark_bg": "#0F3460CC,#1A1A2ECC,135",
+            "normal_text": "#FF8C00,#FFD700,135",
+            "normal_border": "#00000010"
+        },
+        "misc":
+        {
+            "text_horiz_alignment": "center",
+            "line_spacing": "2"
         }
     }
 }

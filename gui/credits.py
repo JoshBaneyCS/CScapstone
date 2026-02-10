@@ -1,7 +1,7 @@
 
 CREDITS_STRINGS = [
     "============================== Team ==============================",
-    "DevOps, SRE, Connection UI/UX, Backend: Joshua Baney "
+    "DevOps, SRE, Connection UI/UX, Backend: Joshua Baney ",
     "Blackjack API: Alan Becerra",
     "Poker API: David Czolba",
     "Game UI/UX: Jerry Gardiner",
