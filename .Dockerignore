@@ -28,6 +28,11 @@ yarn-error.log*
 *.swp
 infra/
 dev-testing/
+!dev-testing/poker-api/requirements.txt
+!dev-testing/blackjack-api/requirements.txt
+!dev-testing/gui/requirements.txt
+!dev-testing/gui/supervisord.conf
+!dev-testing/gui/entrypoint.sh
 frontend/
 database/
 *.md
