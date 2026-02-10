@@ -1,47 +1,15 @@
-# =============================================================================
-# DOCKER-BUILD.YAML - BUILD AND PUSH DOCKER IMAGES
-# =============================================================================
-# This workflow builds Docker images and pushes them to GitHub Container
-# Registry (ghcr.io) when code is pushed to main or a release tag is created.
-#
-# Image Tags:
-# -----------
-#   - main branch: `latest` and `main-<sha>`
-#   - develop branch: `dev` and `develop-<sha>`
-#   - Release tags (v*): `v1.0.0`, `1.0.0`, `1.0`, `1`
-#
-# GitHub Container Registry:
-# --------------------------
-# Images are pushed to ghcr.io/joshbaneycs/cscapstone/
-#   - ghcr.io/joshbaneycs/cscapstone/backend:latest
-#   - ghcr.io/joshbaneycs/cscapstone/frontend:latest
-#
-# Required Secrets:
-# -----------------
-# GITHUB_TOKEN is automatically provided and has write access to ghcr.io
-# for the repository. No additional secrets needed!
-#
-# =============================================================================
+name: Build and Push Docker Image
 
-name: Build and Push Docker Images
-
-# =============================================================================
-# TRIGGERS
-# =============================================================================
 on:
   push:
     branches:
       - main
+      - Staging
       - develop
-    tags:
-      - 'v*.*.*'  # Semantic version tags (v1.0.0, v2.1.3, etc.)
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'infra/**'
-      - '.github/workflows/ci.yml'
-  
-  # Allow manual trigger from GitHub UI
   workflow_dispatch:
     inputs:
       push_images:
@@ -50,179 +18,51 @@ on:
         default: 'true'
         type: boolean
 
-# =============================================================================
-# ENVIRONMENT VARIABLES
-# =============================================================================
 env:
-  # GitHub Container Registry
   REGISTRY: ghcr.io
-  
-  # Image names (lowercase required for ghcr.io)
-  BACKEND_IMAGE: ghcr.io/joshbaneycs/cscapstone/backend
-  FRONTEND_IMAGE: ghcr.io/joshbaneycs/cscapstone/frontend
+  IMAGE_BASE: ghcr.io/joshbaneycs
 
-# =============================================================================
-# PERMISSIONS
-# =============================================================================
 permissions:
   contents: read
-  packages: write  # Required to push to ghcr.io
+  packages: write
 
-# =============================================================================
-# JOBS
-# =============================================================================
 jobs:
-  # ===========================================================================
-  # CHECK WHICH COMPONENTS TO BUILD
-  # ===========================================================================
-  check-components:
-    name: Check Components
+  build-and-push:
+    name: Build and Push All-in-One Image
     runs-on: ubuntu-latest
-    outputs:
-      build_frontend: ${{ steps.check.outputs.build_frontend }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Check for frontend source code
-        id: check
-        run: |
-          if [ -f "frontend/package.json" ]; then
-            echo "build_frontend=true" >> $GITHUB_OUTPUT
-            echo "Frontend source code found - will build frontend image"
-          else
-            echo "build_frontend=false" >> $GITHUB_OUTPUT
-            echo "::warning::Frontend source code not found - skipping frontend Docker build"
-          fi
-
-  # ===========================================================================
-  # BUILD AND PUSH BACKEND IMAGE
-  # ===========================================================================
-  build-backend:
-    name: Build Backend Image
-    runs-on: ubuntu-latest
-    
     outputs:
+      image_name: ${{ steps.set-image.outputs.image_name }}
       image_tag: ${{ steps.meta.outputs.version }}
-      image_digest: ${{ steps.build.outputs.digest }}
-    
+
     steps:
-      # -----------------------------------------------------------------------
-      # SETUP
-      # -----------------------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        # Enables building for multiple architectures (arm64, etc.)
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        # Buildx enables advanced features like caching and multi-platform
-      
-      # -----------------------------------------------------------------------
-      # AUTHENTICATION
-      # -----------------------------------------------------------------------
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      # -----------------------------------------------------------------------
-      # METADATA (Generate tags and labels)
-      # -----------------------------------------------------------------------
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.BACKEND_IMAGE }}
-          tags: |
-            # Branch-based tags
-            type=ref,event=branch
-            # SHA-based tags (short SHA)
-            type=sha,prefix={{branch}}-
-            # Latest tag for main branch
-            type=raw,value=latest,enable={{is_default_branch}}
-            # Semantic version tags for releases
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Environment-specific tags
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
-            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
-            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
-          labels: |
-            org.opencontainers.image.title=Casino Backend API
-            org.opencontainers.image.description=Go REST API for Casino Capstone
-            org.opencontainers.image.vendor=CS Capstone Team
-      
-      # -----------------------------------------------------------------------
-      # BUILD AND PUSH
-      # -----------------------------------------------------------------------
-      - name: Build and push backend image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          platforms: linux/amd64,linux/arm64  # Multi-architecture
-          push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_images != 'false') }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          # Build arguments
-          build-args: |
-            BUILD_VERSION=${{ steps.meta.outputs.version }}
-            BUILD_COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
-      
-      # -----------------------------------------------------------------------
-      # OUTPUT SUMMARY
-      # -----------------------------------------------------------------------
-      - name: Output image info
+
+      - name: Determine image name from branch
+        id: set-image
         run: |
-          echo "## Backend Image Built 🐳" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.BACKEND_IMAGE }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-
-  # ===========================================================================
-  # BUILD AND PUSH FRONTEND IMAGE
-  # ===========================================================================
-  build-frontend:
-    name: Build Frontend Image
-    runs-on: ubuntu-latest
-    needs: check-components
-    if: needs.check-components.outputs.build_frontend == 'true'
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-      image_digest: ${{ steps.build.outputs.digest }}
-
-    steps:
-      # -----------------------------------------------------------------------
-      # SETUP
-      # -----------------------------------------------------------------------
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+          BRANCH="${{ github.ref_name }}"
+          case "$BRANCH" in
+            main)
+              IMAGE_NAME="${{ env.IMAGE_BASE }}/capstone-prod"
+              ;;
+            Staging)
+              IMAGE_NAME="${{ env.IMAGE_BASE }}/capstone-staging"
+              ;;
+            develop)
+              IMAGE_NAME="${{ env.IMAGE_BASE }}/capstone-dev"
+              ;;
+            *)
+              IMAGE_NAME="${{ env.IMAGE_BASE }}/capstone-dev"
+              ;;
+          esac
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "Building image: $IMAGE_NAME"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # -----------------------------------------------------------------------
-      # AUTHENTICATION
-      # -----------------------------------------------------------------------
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -230,192 +70,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # -----------------------------------------------------------------------
-      # METADATA
-      # -----------------------------------------------------------------------
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.FRONTEND_IMAGE }}
+          images: ${{ steps.set-image.outputs.image_name }}
           tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Environment-specific tags
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/develop' }}
-            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
-            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/main' }}
-          labels: |
-            org.opencontainers.image.title=Casino Frontend
-            org.opencontainers.image.description=React frontend for Casino Capstone
-            org.opencontainers.image.vendor=CS Capstone Team
-      
-      # -----------------------------------------------------------------------
-      # BUILD AND PUSH
-      # -----------------------------------------------------------------------
-      - name: Build and push frontend image
+            type=raw,value=latest
+            type=sha,prefix=
+
+      - name: Build and push image
         id: build
         uses: docker/build-push-action@v5
         with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_images != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            VITE_API_URL=/api
-            BUILD_VERSION=${{ steps.meta.outputs.version }}
-      
-      # -----------------------------------------------------------------------
-      # OUTPUT SUMMARY
-      # -----------------------------------------------------------------------
+
       - name: Output image info
         run: |
-          echo "## Frontend Image Built 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Image Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.FRONTEND_IMAGE }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.set-image.outputs.image_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-
-  # ===========================================================================
-  # UPDATE KUSTOMIZATION (Optional - for GitOps)
-  # ===========================================================================
-  update-manifests:
-    name: Update Kubernetes Manifests
-    runs-on: ubuntu-latest
-    needs: [build-backend, check-components, build-frontend]
-    if: |
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      needs.build-backend.result == 'success'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update image tags in Kustomization
-        run: |
-          # Update prod overlay with new image tags
-          cd infra/k8s/overlays/prod
-
-          # Start building the kustomization-images.yaml
-          echo "images:" > kustomization-images.yaml
-          echo "  - name: casino-backend" >> kustomization-images.yaml
-          echo "    newName: ${{ env.BACKEND_IMAGE }}" >> kustomization-images.yaml
-          echo "    newTag: \"${{ needs.build-backend.outputs.image_tag }}\"" >> kustomization-images.yaml
-
-          # Only add frontend if it was built
-          if [ "${{ needs.check-components.outputs.build_frontend }}" == "true" ]; then
-            echo "  - name: casino-frontend" >> kustomization-images.yaml
-            echo "    newName: ${{ env.FRONTEND_IMAGE }}" >> kustomization-images.yaml
-            echo "    newTag: \"${{ needs.build-frontend.outputs.image_tag }}\"" >> kustomization-images.yaml
-          fi
-
-          echo "Updated image tags:"
-          cat kustomization-images.yaml
-
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Check if there are changes
-          if git diff --quiet; then
-            echo "No changes to commit"
-          else
-            git add -A
-            git commit -m "chore: update image tags to ${{ needs.build-backend.outputs.image_tag }} [skip ci]"
-            git push
-          fi
-        continue-on-error: true  # Don't fail if no changes
-
-  # ===========================================================================
-  # NOTIFY ON COMPLETION
-  # ===========================================================================
-  notify:
-    name: Notify
-    runs-on: ubuntu-latest
-    needs: [build-backend, check-components, build-frontend]
-    if: always()
-
-    steps:
-      - name: Create summary
-        run: |
-          echo "# Docker Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Status | Tag |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend | ${{ needs.build-backend.result }} | \`${{ needs.build-backend.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-
-          # Only show frontend if it was supposed to be built
-          if [ "${{ needs.check-components.outputs.build_frontend }}" == "true" ]; then
-            echo "| Frontend | ${{ needs.build-frontend.result }} | \`${{ needs.build-frontend.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Frontend | skipped (no source) | N/A |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-
-# =============================================================================
-# WORKFLOW NOTES
-# =============================================================================
-#
-# GitHub Container Registry (ghcr.io):
-# ------------------------------------
-# - Free for public repositories
-# - Integrated with GitHub (uses GITHUB_TOKEN)
-# - Images are tied to the repository
-# - View at: https://github.com/JoshBaneyCS/CScapstone/pkgs/container
-#
-#
-# Pulling Images:
-# ---------------
-# docker pull ghcr.io/joshbaneycs/cscapstone/backend:latest
-# docker pull ghcr.io/joshbaneycs/cscapstone/frontend:latest
-#
-# For private repos, authenticate first:
-#   echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-#
-#
-# Multi-Architecture Builds:
-# --------------------------
-# Images are built for both amd64 (Intel/AMD) and arm64 (Apple Silicon, AWS Graviton).
-# Docker automatically pulls the correct architecture.
-#
-#
-# Tag Strategy:
-# -------------
-# - main branch → latest, main-abc1234
-# - develop branch → develop, develop-abc1234
-# - v1.2.3 tag → v1.2.3, 1.2.3, 1.2, 1
-#
-#
-# Manual Trigger:
-# ---------------
-# Go to Actions → Build and Push Docker Images → Run workflow
-# Select branch and whether to push images.
-#
-#
-# Alternative Registries:
-# -----------------------
-# To use Docker Hub instead of ghcr.io:
-#   1. Create DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets
-#   2. Change REGISTRY to docker.io
-#   3. Update login action to use Docker Hub credentials
-#
-# =============================================================================

@@ -1,281 +1,81 @@
-# =============================================================================
-# KUSTOMIZATION.YAML - DEVELOPMENT OVERLAY
-# =============================================================================
-# This overlay customizes the base manifests for the DEVELOPMENT environment.
-#
-# Overlays allow you to:
-#   - Change resource limits (smaller for dev)
-#   - Use different image tags
-#   - Modify ConfigMap values
-#   - Add development-specific resources
-#   - Disable features not needed in dev
-#
-# Development Environment Characteristics:
-# ----------------------------------------
-#   - Lower resource limits (save local resources)
-#   - Debug logging enabled
-#   - HTTPS not required (COOKIE_SECURE=false)
-#   - Single replica for most services
-#   - Local image tags (not from registry)
-#
-# Usage:
-# ------
-#   # Preview
-#   kubectl kustomize infra/k8s/overlays/dev
-#
-#   # Apply
-#   kubectl apply -k infra/k8s/overlays/dev
-#
-#   # Delete
-#   kubectl delete -k infra/k8s/overlays/dev
-# =============================================================================
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
-# =============================================================================
-# BASE REFERENCE
-# =============================================================================
-# Reference the base manifests to build upon
 
 resources:
   - ../../base
 
-# =============================================================================
-# NAMESPACE
-# =============================================================================
-# Use separate namespace for dev environment
-
 namespace: casino-dev
-
-# =============================================================================
-# NAME PREFIX/SUFFIX (Optional)
-# =============================================================================
-# Add prefix/suffix to all resource names
-# Useful for running multiple environments in same cluster
-
-# namePrefix: dev-
-# nameSuffix: -dev
-
-# =============================================================================
-# COMMON LABELS
-# =============================================================================
-# Add environment-specific labels
 
 commonLabels:
   environment: development
-
-# =============================================================================
-# COMMON ANNOTATIONS
-# =============================================================================
 
 commonAnnotations:
   environment: development
   description: "Development deployment of Casino Capstone on dev.capstone-groupe.com"
 
-# =============================================================================
-# IMAGES
-# =============================================================================
-# Override image tags for development
-
 images:
-  # Use local images (built with docker build)
-  - name: casino-backend
-    newName: casino-backend
-    newTag: dev
-
-  - name: casino-frontend
-    newName: casino-frontend
-    newTag: dev
-
-  - name: casino-game-service
-    newName: casino-game-service
-    newTag: dev
-
-# =============================================================================
-# CONFIGMAP CUSTOMIZATION
-# =============================================================================
-# Override ConfigMap values for development
+  - name: capstone
+    newName: ghcr.io/joshbaneycs/capstone-dev
+    newTag: latest
 
 configMapGenerator:
-  - name: backend-config
-    behavior: merge  # Merge with base ConfigMap
+  - name: capstone-config
+    behavior: merge
     literals:
-      # Environment
       - APP_ENV=development
-      
-      # Logging - verbose for debugging
       - LOG_LEVEL=debug
       - LOG_FORMAT=text
-      - LOG_CALLER=true
-      
-      # Security - relaxed for local development
       - COOKIE_SECURE=false
-      
-      # Frontend URL for CORS
       - FRONTEND_URL=https://dev.capstone-groupe.com
-      
-      # Feature flags - enable debug endpoints
       - DEBUG_ENDPOINTS_ENABLED=true
-      
-      # Rate limiting - disabled for dev
-      - RATE_LIMIT_RPM=0
-
-# =============================================================================
-# PATCHES - REDUCE REPLICAS
-# =============================================================================
-# Use fewer replicas in development to save resources
 
 patches:
-  # Backend - single replica for dev
+  # 1 replica for dev
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: backend
+        name: capstone
       spec:
         replicas: 1
     target:
       kind: Deployment
-      name: backend
+      name: capstone
 
-  # Frontend - single replica for dev
+  # Lower resources for dev
   - patch: |-
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: frontend
-      spec:
-        replicas: 1
-    target:
-      kind: Deployment
-      name: frontend
-
-  # Disable HPA in development (not needed with single replica)
-  - patch: |-
-      $patch: delete
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: backend-hpa
-    target:
-      kind: HorizontalPodAutoscaler
-      name: backend-hpa
-
-  - patch: |-
-      $patch: delete
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: frontend-hpa
-    target:
-      kind: HorizontalPodAutoscaler
-      name: frontend-hpa
-
-# =============================================================================
-# PATCHES - REDUCE RESOURCE LIMITS
-# =============================================================================
-# Lower resource requirements for local development
-
-  # Backend resources
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: backend
+        name: capstone
       spec:
         template:
           spec:
             containers:
-              - name: backend
-                resources:
-                  requests:
-                    cpu: "50m"
-                    memory: "64Mi"
-                  limits:
-                    cpu: "250m"
-                    memory: "256Mi"
-    target:
-      kind: Deployment
-      name: backend
-
-  # Frontend resources
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: frontend
-      spec:
-        template:
-          spec:
-            containers:
-              - name: frontend
-                resources:
-                  requests:
-                    cpu: "25m"
-                    memory: "32Mi"
-                  limits:
-                    cpu: "100m"
-                    memory: "64Mi"
-    target:
-      kind: Deployment
-      name: frontend
-
-  # PostgreSQL resources
-  - patch: |-
-      apiVersion: apps/v1
-      kind: StatefulSet
-      metadata:
-        name: postgres
-      spec:
-        template:
-          spec:
-            containers:
-              - name: postgres
+              - name: capstone
                 resources:
                   requests:
                     cpu: "100m"
                     memory: "256Mi"
                   limits:
                     cpu: "500m"
-                    memory: "512Mi"
+                    memory: "1Gi"
     target:
-      kind: StatefulSet
-      name: postgres
+      kind: Deployment
+      name: capstone
 
-# =============================================================================
-# PATCHES - REDUCE PVC SIZE
-# =============================================================================
-# Smaller PVC for development (don't need 30GB locally)
-
-  - patch: |-
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: postgres-pvc
-      spec:
-        resources:
-          requests:
-            storage: 5Gi
-    target:
-      kind: PersistentVolumeClaim
-      name: postgres-pvc
-
-# =============================================================================
-# PATCHES - INGRESS FOR DEVELOPMENT
-# =============================================================================
-# Modify ingress for dev environment with dev.capstone-groupe.com
-
+  # Dev ingress
   - patch: |-
       apiVersion: networking.k8s.io/v1
       kind: Ingress
       metadata:
         name: casino-ingress
         annotations:
-          nginx.ingress.kubernetes.io/ssl-redirect: "true"
-          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-          cert-manager.io/cluster-issuer: "letsencrypt-staging"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+          traefik.ingress.kubernetes.io/router.entrypoints: websecure
+          traefik.ingress.kubernetes.io/router.tls: "true"
       spec:
+        ingressClassName: traefik
         tls:
           - hosts:
               - dev.capstone-groupe.com
@@ -284,116 +84,13 @@ patches:
           - host: dev.capstone-groupe.com
             http:
               paths:
-                - path: /api
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
-                - path: /health
-                  pathType: Exact
-                  backend:
-                    service:
-                      name: backend
-                      port:
-                        number: 8080
-                - path: /ws/game
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: game-service
-                      port:
-                        number: 8000
                 - path: /
                   pathType: Prefix
                   backend:
                     service:
-                      name: frontend
+                      name: capstone
                       port:
                         number: 80
     target:
       kind: Ingress
       name: casino-ingress
-
-# =============================================================================
-# PATCHES - DISABLE PDB IN DEV
-# =============================================================================
-# Pod Disruption Budgets not needed with single replicas
-
-  - patch: |-
-      $patch: delete
-      apiVersion: policy/v1
-      kind: PodDisruptionBudget
-      metadata:
-        name: backend-pdb
-    target:
-      kind: PodDisruptionBudget
-      name: backend-pdb
-
-  - patch: |-
-      $patch: delete
-      apiVersion: policy/v1
-      kind: PodDisruptionBudget
-      metadata:
-        name: frontend-pdb
-    target:
-      kind: PodDisruptionBudget
-      name: frontend-pdb
-
-# =============================================================================
-# DEVELOPMENT SETUP NOTES
-# =============================================================================
-#
-# Prerequisites:
-# --------------
-# 1. Kubernetes cluster (minikube, kind, Docker Desktop)
-# 2. kubectl configured
-# 3. Ingress controller installed
-#
-#
-# Minikube Setup:
-# ---------------
-# minikube start --memory=4096 --cpus=2
-# minikube addons enable ingress
-# eval $(minikube docker-env)
-#
-# # Build images in minikube's Docker
-# cd backend && docker build -t casino-backend:dev .
-# cd frontend && docker build -t casino-frontend:dev .
-#
-# # Apply dev overlay
-# kubectl apply -k infra/k8s/overlays/dev
-#
-# # Access the app
-# minikube tunnel  # In separate terminal
-# # Open http://localhost
-#
-#
-# Kind Setup:
-# -----------
-# kind create cluster --config kind-config.yaml
-#
-# # Build and load images
-# docker build -t casino-backend:dev ./backend
-# docker build -t casino-frontend:dev ./frontend
-# kind load docker-image casino-backend:dev
-# kind load docker-image casino-frontend:dev
-#
-# # Apply dev overlay
-# kubectl apply -k infra/k8s/overlays/dev
-#
-#
-# Local /etc/hosts:
-# -----------------
-# Add to /etc/hosts for domain testing:
-#   127.0.0.1 dev.capstone-groupe.com
-#   127.0.0.1 www.dev.capstone-groupe.com
-#
-#
-# Port Forward (Alternative to Ingress):
-# --------------------------------------
-# kubectl port-forward svc/frontend 5173:80 -n casino
-# kubectl port-forward svc/backend 8080:8080 -n casino
-#
-# =============================================================================
