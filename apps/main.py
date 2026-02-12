@@ -25,7 +25,8 @@ class SingleStartRequest(BaseModel):
 
     player_bankroll: int = 100
     cpu_bankroll: int = 100
-    bet: int = 1
+    cpu_players: int = 4
+    bet: int = 10
 
 
 class ActionRequest(BaseModel):
@@ -53,6 +54,7 @@ class GameState(BaseModel):
 
     # single-player fields
     mode: str | None = None  # None or "single"
+    cpu_players: list[str] | None = None
     pot: int | None = None
     current_bet: int | None = None
     round_bets: dict[str, int] | None = None
@@ -60,6 +62,7 @@ class GameState(BaseModel):
     folded: list[str] | None = None
     last_action: dict[str, str] | None = None
     to_act: str | None = None  # "player" or "cpu"
+    last_small_blind: str | None = None
 
     # private deck (not serialized)
     _deck: list[str] = PrivateAttr(default_factory=list[str])  # deck is kept server-side
@@ -235,7 +238,10 @@ def _preflop_strength(hand: list[str]) -> int:
 def state() -> GameState:
     """Return current game state."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     return TEXAS_GAME
 
 
@@ -245,6 +251,14 @@ def _ensure_single() -> GameState:
     if s.mode != "single":
         raise HTTPException(status_code=400, detail="No active single-player round.")
     return s
+
+
+def _active_players() -> list[str]:
+    """Return active (not folded) players in the current hand."""
+    if TEXAS_GAME is None:
+        return []
+    folded = set(TEXAS_GAME.folded or [])
+    return [p for p in TEXAS_GAME.players_hands if p not in folded]
 
 
 def _post_bet(player: str, amount: int) -> None:
@@ -280,12 +294,21 @@ def _call_or_check(player: str) -> int:
 
 
 def _round_settled() -> bool:
-    """Check if both players have matched the current bet."""
+    """Check if all active players have matched the current bet."""
     if TEXAS_GAME is None:
         return False
     if TEXAS_GAME.round_bets is None or TEXAS_GAME.current_bet is None:
         return False
-    return TEXAS_GAME.round_bets.get("Player", 0) == TEXAS_GAME.round_bets.get("CPU", 0)
+    active_players = _active_players()
+    if not active_players:
+        return True
+    for player in active_players:
+        player_stack = (TEXAS_GAME.player_stacks or {}).get(player, 0)
+        if player_stack == 0:
+            continue
+        if TEXAS_GAME.round_bets.get(player, 0) != (TEXAS_GAME.current_bet or 0):
+            return False
+    return True
 
 
 def _advance_stage() -> None:
@@ -304,8 +327,8 @@ def _advance_stage() -> None:
     elif TEXAS_GAME.status == "river":
         TEXAS_GAME.status = "showdown"
     if TEXAS_GAME.round_bets is not None:
-        TEXAS_GAME.round_bets["Player"] = 0
-        TEXAS_GAME.round_bets["CPU"] = 0
+        for player in TEXAS_GAME.round_bets:
+            TEXAS_GAME.round_bets[player] = 0
     TEXAS_GAME.current_bet = 0
     TEXAS_GAME.to_act = "player"
 
@@ -317,6 +340,8 @@ def _settle_showdown() -> None:
     community = TEXAS_GAME.community_cards
     scores: dict[str, tuple[int, list[int]]] = {}
     for player, hand in TEXAS_GAME.players_hands.items():
+        if TEXAS_GAME.folded and player in TEXAS_GAME.folded:
+            continue
         scores[player] = evaluate_best_hand(hand + community)  # score for each player
     best_players: list[str] = []
     best_score: tuple[int, list[int]] | None = None
@@ -338,13 +363,13 @@ def _settle_showdown() -> None:
     TEXAS_GAME.status = "finished"
 
 
-def _cpu_decide_action() -> tuple[str, int]:
+def _cpu_decide_action(cpu_name: str) -> tuple[str, int]:
     """Decide CPU decision based on hand strength and bet to call."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
-    cpu_hand = TEXAS_GAME.players_hands.get("CPU", [])
-    to_call = (TEXAS_GAME.current_bet or 0) - (TEXAS_GAME.round_bets or {}).get("CPU", 0)
-    cpu_stack = (TEXAS_GAME.player_stacks or {}).get("CPU", 0)
+    cpu_hand = TEXAS_GAME.players_hands.get(cpu_name, [])
+    to_call = (TEXAS_GAME.current_bet or 0) - (TEXAS_GAME.round_bets or {}).get(cpu_name, 0)
+    cpu_stack = (TEXAS_GAME.player_stacks or {}).get(cpu_name, 0)
     if TEXAS_GAME.status == "preflop":
         strength = _preflop_strength(cpu_hand)
     else:
@@ -370,33 +395,47 @@ def _finish_on_fold(folding_player: str) -> None:
     """End the hand immediately when a player folds."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
-    winner = "CPU" if folding_player == "Player" else "Player"
     if TEXAS_GAME.folded is None:
         TEXAS_GAME.folded = []
-    TEXAS_GAME.folded.append(folding_player)
-    TEXAS_GAME.winners = [winner]
-    if TEXAS_GAME.player_stacks is not None:
-        TEXAS_GAME.player_stacks[winner] += TEXAS_GAME.pot or 0
-    TEXAS_GAME.status = "finished"
+    if folding_player not in TEXAS_GAME.folded:
+        TEXAS_GAME.folded.append(folding_player)
+    remaining = _active_players()
+    if folding_player == "Player" or len(remaining) <= 1:
+        TEXAS_GAME.winners = remaining
+        if TEXAS_GAME.player_stacks is not None and remaining:
+            pot = TEXAS_GAME.pot or 0
+            split = pot // len(remaining)
+            remainder = pot % len(remaining)
+            for i, p in enumerate(remaining):
+                TEXAS_GAME.player_stacks[p] += split + (1 if i < remainder else 0)
+        TEXAS_GAME.status = "finished"
 
 
-def _cpu_take_turn() -> None:
-    """Execute CPU action and return control to player."""
+def _cpu_take_turns() -> None:
+    """Execute CPU actions in order and return control to player."""
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
-    action, amount = _cpu_decide_action()
-    if TEXAS_GAME.last_action is None:
-        TEXAS_GAME.last_action = {}
-    TEXAS_GAME.last_action["CPU"] = action
-    if action == "fold":
-        _finish_on_fold("CPU")
-        return
-    if action == "stay":
-        _call_or_check("CPU")
-    elif action == "raise":
-        _call_or_check("CPU")
-        if amount > 0:
-            _post_bet("CPU", amount)
+    cpu_players = TEXAS_GAME.cpu_players or []
+    for cpu_name in cpu_players:
+        if TEXAS_GAME.folded and cpu_name in TEXAS_GAME.folded:
+            continue
+        if TEXAS_GAME.status == "finished":
+            return
+        action, amount = _cpu_decide_action(cpu_name)
+        if TEXAS_GAME.last_action is None:
+            TEXAS_GAME.last_action = {}
+        TEXAS_GAME.last_action[cpu_name] = action
+        if action == "fold":
+            _finish_on_fold(cpu_name)
+            if TEXAS_GAME.status == "finished":
+                return
+            continue
+        if action == "stay":
+            _call_or_check(cpu_name)
+        elif action == "raise":
+            _call_or_check(cpu_name)
+            if amount > 0:
+                _post_bet(cpu_name, amount)
     TEXAS_GAME.to_act = "player"
 
 
@@ -407,6 +446,12 @@ def _maybe_progress_round() -> None:
     if TEXAS_GAME.status in ("finished", "showdown"):
         if TEXAS_GAME.status == "showdown":
             _settle_showdown()
+        return
+    if len(_active_players()) <= 1:
+        TEXAS_GAME.winners = _active_players()
+        if TEXAS_GAME.player_stacks is not None and TEXAS_GAME.winners:
+            TEXAS_GAME.player_stacks[TEXAS_GAME.winners[0]] += TEXAS_GAME.pot or 0
+        TEXAS_GAME.status = "finished"
         return
     if _round_settled():
         _advance_stage()
@@ -426,15 +471,42 @@ def single_start(req: SingleStartRequest) -> GameState:
     """Start a new single-player Texas Hold'em game."""
     global TEXAS_GAME
     if req.bet <= 0:
-        raise HTTPException(status_code=400, detail="Bet must be > 0")
+        raise HTTPException(status_code=400, detail="Blind must be > 0")
     if req.player_bankroll <= 0 or req.cpu_bankroll <= 0:
         raise HTTPException(status_code=400, detail="Bankrolls must be > 0")
+    if req.cpu_players < 1 or req.cpu_players > 7:
+        raise HTTPException(status_code=400, detail="CPU players must be between 1 and 7")
 
     deck = new_deck()
-    players_hands = {
-        "Player": [draw(deck), draw(deck)],
-        "CPU": [draw(deck), draw(deck)],
-    }
+    cpu_players = [f"CPU{i + 1}" for i in range(req.cpu_players)]
+    turn_order = ["Player", *cpu_players]
+    players_hands: dict[str, list[str]] = {"Player": [draw(deck), draw(deck)]}
+    for cpu_name in cpu_players:
+        players_hands[cpu_name] = [draw(deck), draw(deck)]
+
+    round_bets = {"Player": 0}
+    player_stacks = {"Player": req.player_bankroll}
+    for cpu_name in cpu_players:
+        round_bets[cpu_name] = 0
+        player_stacks[cpu_name] = req.cpu_bankroll
+
+    small_blind = max(1, req.bet // 2)
+    big_blind = req.bet
+    small_blind_player = turn_order[0]
+    big_blind_player = turn_order[1 % len(turn_order)]
+
+    if player_stacks[small_blind_player] < small_blind:
+        raise HTTPException(status_code=400, detail="Small blind stack too low")
+    if player_stacks[big_blind_player] < big_blind:
+        raise HTTPException(status_code=400, detail="Big blind stack too low")
+
+    pot = 0
+    player_stacks[small_blind_player] -= small_blind
+    round_bets[small_blind_player] += small_blind
+    pot += small_blind
+    player_stacks[big_blind_player] -= big_blind
+    round_bets[big_blind_player] += big_blind
+    pot += big_blind
 
     TEXAS_GAME = GameState(
         players_hands=players_hands,
@@ -442,38 +514,38 @@ def single_start(req: SingleStartRequest) -> GameState:
         bet=req.bet,
         status="preflop",
         mode="single",
-        pot=0,
-        current_bet=0,
-        round_bets={"Player": 0, "CPU": 0},
-        player_stacks={"Player": req.player_bankroll, "CPU": req.cpu_bankroll},
+        cpu_players=cpu_players,
+        pot=pot,
+        current_bet=big_blind,
+        round_bets=round_bets,
+        player_stacks=player_stacks,
         folded=[],
         last_action={},
         to_act="player",
+        last_small_blind=small_blind_player,
     )
     TEXAS_GAME._deck = deck
-    return state()
 
+    # Check actions for CPUs 2 through 4
+    for i in range(1, min(4, len(cpu_players))):
+        cpu_name = cpu_players[i]
+        if TEXAS_GAME.status == "finished":
+            break
+        action, amount = _cpu_decide_action(cpu_name)
+        if TEXAS_GAME.last_action is None:
+            TEXAS_GAME.last_action = {}
+        TEXAS_GAME.last_action[cpu_name] = action
+        if action == "fold":
+            _finish_on_fold(cpu_name)
+            continue
+        if action == "stay":
+            _call_or_check(cpu_name)
+        elif action == "raise":
+            _call_or_check(cpu_name)
+            if amount > 0:
+                _post_bet(cpu_name, amount)
+    TEXAS_GAME.to_act = "player"  # ensure player gets first action after blinds
 
-@app.post("/texas/single/bet")
-def single_bet(req: BetRequest) -> GameState:
-    """Place the initial bet for a betting round."""
-    s = _ensure_single()
-    if s.to_act != "player":
-        raise HTTPException(status_code=400, detail="Not player's turn.")
-    if s.status not in ("preflop", "flop", "turn", "river"):
-        raise HTTPException(status_code=400, detail=f"Invalid state: {s.status}")
-    if s.current_bet and s.current_bet > 0:
-        raise HTTPException(status_code=400, detail="Betting already started this round.")
-
-    _post_bet("Player", req.amount)
-    if s.last_action is None:
-        s.last_action = {}
-    s.last_action["Player"] = "raise"
-    s.to_act = "cpu"
-
-    _cpu_take_turn()
-    if s.status != "finished" and s.to_act == "player" and _round_settled():
-        _maybe_progress_round()
     return state()
 
 
@@ -507,7 +579,7 @@ def single_action(req: ActionRequest) -> GameState:
         _post_bet("Player", req.amount)
 
     s.to_act = "cpu"
-    _cpu_take_turn()
+    _cpu_take_turns()
     if s.status != "finished" and s.to_act == "player" and _round_settled():
         _maybe_progress_round()
     return state()
@@ -516,7 +588,10 @@ def single_action(req: ActionRequest) -> GameState:
 def _deal_community(n: int) -> None:
     """Deal n community cards."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     for _ in range(n):
         TEXAS_GAME.community_cards.append(draw(TEXAS_GAME._deck))
 
@@ -525,10 +600,15 @@ def _deal_community(n: int) -> None:
 def flop() -> GameState:
     """Deal the flop (3 community cards)."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     s = state()
     if s.status != "preflop":
         raise HTTPException(status_code=400, detail=f"Invalid state for flop: {s.status}")
+    if not _round_settled():
+        raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(3)
     TEXAS_GAME.status = "flop"
     return state()
@@ -538,10 +618,15 @@ def flop() -> GameState:
 def turn() -> GameState:
     """Deal the turn (1 community card)."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     s = state()
     if s.status not in ("flop",):
         raise HTTPException(status_code=400, detail=f"Invalid state for turn: {s.status}")
+    if not _round_settled():
+        raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(1)
     TEXAS_GAME.status = "turn"
     return state()
@@ -551,10 +636,15 @@ def turn() -> GameState:
 def river() -> GameState:
     """Deal the river (1 community card)."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     s = state()
     if s.status not in ("turn",):
         raise HTTPException(status_code=400, detail=f"Invalid state for river: {s.status}")
+    if not _round_settled():
+        raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(1)
     TEXAS_GAME.status = "river"
     return state()
@@ -564,15 +654,22 @@ def river() -> GameState:
 def showdown() -> GameState:
     """Evaluate hands and determine winner(s)."""
     if TEXAS_GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /texas/start first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No active round. Call /texas/single/start first.",
+        )
     s = state()
     if s.status not in ("river",):
         raise HTTPException(status_code=400, detail=f"Invalid state for showdown: {s.status}")
+    if not _round_settled():
+        raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
 
     # Evaluate all players
     community = TEXAS_GAME.community_cards
     scores: dict[str, tuple[int, list[int]]] = {}
     for player, hand in TEXAS_GAME.players_hands.items():
+        if TEXAS_GAME.folded and player in TEXAS_GAME.folded:
+            continue
         combined = hand + community  # player's full hand
         scores[player] = evaluate_best_hand(combined)
 
@@ -589,6 +686,13 @@ def showdown() -> GameState:
     TEXAS_GAME.winners = best_players
     TEXAS_GAME.status = "finished"
     TEXAS_GAME.winning_number = best_score
+    if TEXAS_GAME.player_stacks is not None:
+        pot = TEXAS_GAME.pot or 0
+        if best_players:
+            split = pot // len(best_players)
+            remainder = pot % len(best_players)
+            for i, p in enumerate(best_players):
+                TEXAS_GAME.player_stacks[p] += split + (1 if i < remainder else 0)
     return state()
 
 
