@@ -421,30 +421,6 @@ def root() -> dict[str, str]:
     return {"message": "Texas Hold'em API is running"}
 
 
-@app.post("/texas/old_start")
-def old_start(req: StartRequest) -> GameState:
-    """Start a new Texas Hold'em game."""
-    global TEXAS_GAME
-    if req.bet <= 0:
-        raise HTTPException(status_code=400, detail="Bet must be > 0")
-    if req.players < 2 or req.players > 8:
-        raise HTTPException(status_code=400, detail="Players must be between 2 and 8")
-
-    deck = new_deck()
-    players_hands: dict[str, list[str]] = {}
-    for i in range(req.players):
-        players_hands[f"Player {i + 1}"] = [draw(deck), draw(deck)]
-
-    TEXAS_GAME = GameState(
-        players_hands=players_hands,
-        community_cards=[],
-        bet=req.bet,
-        status="preflop",
-    )
-    TEXAS_GAME._deck = deck
-    return state()
-
-
 @app.post("/texas/single/start")
 def single_start(req: SingleStartRequest) -> GameState:
     """Start a new single-player Texas Hold'em game."""
@@ -616,27 +592,7 @@ def showdown() -> GameState:
     return state()
 
 
-@app.post("/texas/test/{win_needed}")
-def texas_test(win_needed: int) -> GameState:
-    """Run a test game until a given winning hand."""
-    while True:
-        old_start(StartRequest(players=4, bet=10))
-        flop()
-        turn()
-        river()
-        showdown()
-        wn = state().winning_number
-        if wn and wn[0] == win_needed:
-            return state()
-
-
 @app.get("/texas/state")
 def get_state() -> GameState:
     """Get current game state."""
     return state()
-
-
-if __name__ == "__main__":
-    # quick local test
-    for i in range(1, 11):
-        print(texas_test(i))
