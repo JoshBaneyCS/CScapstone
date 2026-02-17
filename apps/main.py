@@ -216,22 +216,87 @@ def compare_hands(cards_a: list[str], cards_b: list[str]) -> int:
     return 0
 
 
-def _preflop_strength(hand: list[str]) -> int:
-    """Rough preflop strength score for CPU logic."""
+def _preflop_strength(hand: list[str]) -> float:
+    """Calculate preflop hand strength using standard poker hand rankings.
+
+    Returns a score 0.0-10.0 based on:
+    - Pocket pairs (premium: AA/KK=9.5, high: QQ-TT=8.5, medium: 99-77=7.0, low: 66-22=5.5)
+    - Broadway hands (AK=9.0, AQ/AJ=8.0, KQ/KJ=7.0)
+    - Suited connectors (high: AKs-KQs=8.5, medium: QJs-99s=6.5, low: 88s-22s=4.5)
+    - Other hands scaled accordingly
+    """
     r1, s1 = parse_card(hand[0])
     r2, s2 = parse_card(hand[1])
-    score = 0
-    if r1 == r2:
-        score += 4
-    high_cards = sum(1 for r in (r1, r2) if r >= 11)
-    score += high_cards
-    if max(r1, r2) >= 13:
-        score += 1
-    if s1 == s2:
-        score += 1
-    if abs(r1 - r2) == 1:
-        score += 1
-    return score
+    is_pair = r1 == r2
+    is_suited = s1 == s2
+    is_connected = abs(r1 - r2) == 1
+    is_one_gap = abs(r1 - r2) == 2
+    high_rank = max(r1, r2)
+    low_rank = min(r1, r2)
+
+    # Pocket pairs
+    if is_pair:
+        if high_rank >= 13:  # AA, KK
+            return 9.5
+        if high_rank >= 11:  # QQ, JJ, TT
+            return 8.5
+        if high_rank >= 9:  # 99-77
+            return 7.0
+        if high_rank >= 5:  # 66-55
+            return 5.5
+        return 4.0  # 44-22
+
+    # Broadway hands (no pair)
+    if high_rank >= 13:  # A-high hands
+        if low_rank >= 12:  # AK, AQ
+            return 9.0 if is_suited else 8.5
+        if low_rank >= 11:  # AJ, AT
+            return 8.0 if is_suited else 7.5
+        if low_rank >= 10:  # ATs, A9s
+            return 7.0 if is_suited else 5.5
+        if low_rank >= 5:  # A5-A2 (wheel potential)
+            return 5.0 if is_suited else 3.5
+        return 2.5
+
+    if high_rank >= 12:  # K-high, Q-high hands
+        if low_rank >= 12:  # KQ, QK
+            return 8.0 if is_suited else 7.5
+        if low_rank >= 11:  # KJ, QJ
+            return 7.0 if is_suited else 6.5
+        if low_rank >= 10:  # KT, QT
+            return 6.0 if is_suited else 5.0
+        if low_rank >= 9 and is_suited:
+            return 5.5
+        if low_rank >= 5 and is_suited:
+            return 4.5
+        return 3.0 if is_suited else 2.0
+
+    # Suited/connected middling hands
+    if is_suited:
+        if is_connected:
+            if high_rank >= 10:  # JT-98 suited
+                return 6.5
+            if high_rank >= 8:  # 87-76 suited
+                return 5.0
+            return 4.0  # 65-32 suited connected
+        if is_one_gap:
+            if high_rank >= 9:  # J9-97 suited gapped
+                return 5.5
+            return 4.0
+        if high_rank >= 10:  # High suited but disconnected
+            return 5.0
+        return 3.5
+
+    # Unsuited connectors
+    if is_connected:
+        if high_rank >= 10:  # JT-98 unsuited
+            return 5.5
+        if high_rank >= 8:  # 87-76 unsuited
+            return 4.0
+        return 2.5
+
+    # Default hands
+    return 2.0 if high_rank >= 10 else 1.0
 
 
 # ----- Game logic -----
@@ -363,30 +428,163 @@ def _settle_showdown() -> None:
     TEXAS_GAME.status = "finished"
 
 
+def _calculate_pot_odds(to_call: int) -> float:
+    """Calculate pot odds ratio (0.0 to 1.0+).
+
+    Returns the ratio: amount_to_call / (pot + amount_to_call)
+    Lower ratio = better pot odds (should call more often)
+    """
+    if TEXAS_GAME is None or to_call <= 0:
+        return 0.0
+    total_pot = TEXAS_GAME.pot or 0
+    return to_call / (total_pot + to_call)
+
+
+def _get_opponent_count() -> int:
+    """Count active opponent players."""
+    if TEXAS_GAME is None:
+        return 0
+    active = _active_players()
+    return max(0, len(active) - 1)  # exclude self
+
+
+def _get_hand_potential(hand: list[str], community: list[str]) -> float:
+    """Estimate hand's potential to improve.
+
+    Returns 0.0-1.0 representing likelihood of making strong hand.
+    Considers current hand rank and remaining cards.
+    """
+    if not hand or len(hand) != 2:
+        return 0.0
+
+    current_strength = evaluate_best_hand(hand + community)[0]
+
+    # Already strong hands have less upside
+    if current_strength >= 8:  # Four of a kind or better
+        return 0.1
+    if current_strength >= 6:  # Flush or better
+        return 0.3
+    if current_strength >= 5:  # Straight or better
+        return 0.4
+
+    # Check for draws (potential to improve)
+    r1, s1 = parse_card(hand[0])
+    r2, s2 = parse_card(hand[1])
+    community_ranks = [parse_card(c)[0] for c in community]
+    hand_ranks = [r1, r2]
+
+    potential = 0.0
+
+    # Flush draw (4 cards same suit)
+    if s1 == s2:
+        suit_count = sum(1 for c in community if parse_card(c)[1] == s1)
+        if suit_count >= 2:  # 4 cards to flush
+            potential += 0.5
+
+    # Straight draw (4 to straight) or open-ended
+    all_ranks = hand_ranks + community_ranks
+    gaps = [all_ranks[i + 1] - all_ranks[i] - 1 for i in range(len(all_ranks) - 1)]
+    if gaps.count(1) >= 2 or (abs(r1 - r2) <= 3):  # open-ended or inside
+        potential += 0.4
+
+    # Overcards (both hole cards are higher than community)
+    if community and all(r > max(community_ranks) for r in hand_ranks):
+        potential += 0.3
+
+    return min(1.0, potential)
+
+
 def _cpu_decide_action(cpu_name: str) -> tuple[str, int]:
-    """Decide CPU decision based on hand strength and bet to call."""
+    """Decide CPU action using comprehensive hand analysis.
+
+    Considers: hand strength, pot odds, stack sizes, opponents, and position.
+    Returns (action, raise_amount) where action is 'stay', 'raise', or 'fold'.
+    """
     if TEXAS_GAME is None:
         raise HTTPException(status_code=400, detail="No active round.")
+
     cpu_hand = TEXAS_GAME.players_hands.get(cpu_name, [])
     to_call = (TEXAS_GAME.current_bet or 0) - (TEXAS_GAME.round_bets or {}).get(cpu_name, 0)
     cpu_stack = (TEXAS_GAME.player_stacks or {}).get(cpu_name, 0)
+    pot = TEXAS_GAME.pot or 0
+    community = TEXAS_GAME.community_cards
+
+    # Step 1: Evaluate hand strength
     if TEXAS_GAME.status == "preflop":
-        strength = _preflop_strength(cpu_hand)
+        hand_strength = _preflop_strength(cpu_hand) / 10.0  # normalize to 0.0-1.0
     else:
-        strength = evaluate_best_hand(cpu_hand + TEXAS_GAME.community_cards)[0]
-    action = "stay"
+        hand_strength = evaluate_best_hand(cpu_hand + community)[0] / 10.0
+
+    # Step 2: Calculate additional factors
+    pot_odds = _calculate_pot_odds(to_call)
+    opponent_count = _get_opponent_count()
+    hand_potential = _get_hand_potential(cpu_hand, community)
+
+    # Adjust hand strength by position if late stage
+    if TEXAS_GAME.status in ("turn", "river"):
+        # Already mostly known, potential less important
+        adjusted_strength = hand_strength * 0.9 + hand_potential * 0.1
+    else:
+        # Early stages, potential matters more
+        adjusted_strength = hand_strength * 0.6 + hand_potential * 0.4
+
+    # Step 3: Determine action based on comprehensive strategy
+    action = "fold"
     amount = 0
 
-    if to_call == 0 and strength >= 5 and cpu_stack > 0:
-        action = "raise"
-        amount = min(5, cpu_stack)  # small raise
-    elif to_call > 0 and strength >= 6 and cpu_stack > to_call + 5:
-        action = "raise"
-        amount = 5  # small raise
-    elif to_call > 0 and ((strength >= 4 and to_call <= 10) or to_call <= 2):
+    # If no bet to call, consider raising or checking
+    if to_call <= 0:
+        # Check/raise decision when not facing a bet
+        if adjusted_strength >= 0.7:  # Strong hand
+            action = "raise"
+            raise_amount = min(int(pot * 0.5), cpu_stack)
+            amount = max(1, raise_amount)
+        elif adjusted_strength >= 0.5:  # Medium hand
+            if opponent_count <= 1 or cpu_stack > pot * 2:
+                action = "raise"
+                amount = min(int(pot * 0.25), cpu_stack)
+            else:
+                action = "stay"  # check
+        else:
+            action = "stay"  # check with weak hand
+    else:
+        # Facing a bet - must decide to call, raise, or fold
+        pot_odds_threshold = 0.35  # call if odds are better than 35%
+
+        # Very strong hand - raise
+        if adjusted_strength >= 0.75:
+            if cpu_stack > to_call + 10:
+                action = "raise"
+                # 3-bet: raise to 3x the bet
+                amount = min(int(to_call * 2), cpu_stack - to_call)
+            else:
+                action = "stay"  # call if short on stack
+
+        # Medium-strong hand with good pot odds - call or raise
+        elif adjusted_strength >= 0.55 or pot_odds <= pot_odds_threshold:
+            if adjusted_strength >= 0.65 and cpu_stack > to_call + 10:
+                action = "raise"
+                amount = min(int(to_call * 1.5), cpu_stack - to_call)
+            else:
+                action = "stay"  # call
+
+        # Medium hand - consider pot odds and implied odds
+        elif adjusted_strength >= 0.35:
+            # Call if good pot odds or high potential
+            action = "stay" if pot_odds <= pot_odds_threshold or hand_potential >= 0.6 else "fold"
+
+        # Weak hand - fold unless very good odds or short stacks
+        # Desperate situations (low stack) might push with weak hand
+        elif (cpu_stack <= to_call * 2 and adjusted_strength >= 0.2) or pot_odds <= 0.2:
+            action = "stay"
+        else:
+            action = "fold"
+
+    # Ensure we don't bet more than stack
+    amount = min(amount, cpu_stack)
+    if action == "raise" and amount <= 0:
         action = "stay"
-    elif to_call > 0:
-        action = "fold"
+        amount = 0
 
     return action, amount
 
@@ -623,7 +821,7 @@ def turn() -> GameState:
             detail="No active round. Call /texas/single/start first.",
         )
     s = state()
-    if s.status not in ("flop",):
+    if s.status != "flop":
         raise HTTPException(status_code=400, detail=f"Invalid state for turn: {s.status}")
     if not _round_settled():
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
@@ -641,7 +839,7 @@ def river() -> GameState:
             detail="No active round. Call /texas/single/start first.",
         )
     s = state()
-    if s.status not in ("turn",):
+    if s.status != "turn":
         raise HTTPException(status_code=400, detail=f"Invalid state for river: {s.status}")
     if not _round_settled():
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
@@ -659,7 +857,7 @@ def showdown() -> GameState:
             detail="No active round. Call /texas/single/start first.",
         )
     s = state()
-    if s.status not in ("river",):
+    if s.status != "river":
         raise HTTPException(status_code=400, detail=f"Invalid state for showdown: {s.status}")
     if not _round_settled():
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
