@@ -180,7 +180,9 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		log.Printf("Failed to encode health response: %v", err)
+	}
 }
 
 func handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +219,9 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	setSessionCookie(w, user.ID)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	if err := json.NewEncoder(w).Encode(user); err != nil {
+		log.Printf("Failed to encode register response: %v", err)
+	}
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -243,7 +247,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	setSessionCookie(w, user.ID)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	if err := json.NewEncoder(w).Encode(user); err != nil {
+		log.Printf("Failed to encode login response: %v", err)
+	}
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -266,7 +272,9 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(user)
+	if err := json.NewEncoder(w).Encode(user); err != nil {
+		log.Printf("Failed to encode user response: %v", err)
+	}
 }
 
 func handleBankroll(w http.ResponseWriter, r *http.Request) {
@@ -278,14 +286,19 @@ func handleBankroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int64{"bankroll_cents": cents})
+	if err := json.NewEncoder(w).Encode(map[string]int64{"bankroll_cents": cents}); err != nil {
+		log.Printf("Failed to encode bankroll response: %v", err)
+	}
 }
 
 func handleBlackjackStart(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 	var req BetRequest
 	body, _ := io.ReadAll(r.Body)
-	json.Unmarshal(body, &req)
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	if req.Bet <= 0 {
 		http.Error(w, "Invalid bet", http.StatusBadRequest)
@@ -309,13 +322,17 @@ func handleBlackjackStart(w http.ResponseWriter, r *http.Request) {
 	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		// Refund on error
-		db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", req.Bet, userID)
+		if _, execErr := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", req.Bet, userID); execErr != nil {
+			log.Printf("Failed to refund bet: %v", execErr)
+		}
 		http.Error(w, "Game API error", http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
-	io.Copy(w, resp.Body)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("Failed to copy blackjack start response: %v", err)
+	}
 }
 
 func handleBlackjackStand(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +349,9 @@ func handleBlackjackStand(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := io.ReadAll(resp.Body)
 	var state map[string]interface{}
-	json.Unmarshal(body, &state)
+	if err := json.Unmarshal(body, &state); err != nil {
+		log.Printf("Failed to unmarshal blackjack stand response: %v", err)
+	}
 
 	// Update bankroll based on result
 	status, _ := state["status"].(string)
@@ -341,15 +360,23 @@ func handleBlackjackStand(w http.ResponseWriter, r *http.Request) {
 
 	switch status {
 	case "player_win", "dealer_bust":
-		db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1, blackjack_wins = blackjack_wins + 1 WHERE id = $2", betInt*2, userID)
+		if _, err := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1, blackjack_wins = blackjack_wins + 1 WHERE id = $2", betInt*2, userID); err != nil {
+			log.Printf("Failed to update blackjack win: %v", err)
+		}
 	case "push":
-		db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", betInt, userID)
+		if _, err := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", betInt, userID); err != nil {
+			log.Printf("Failed to update blackjack push: %v", err)
+		}
 	case "dealer_win", "player_bust":
-		db.Exec("UPDATE users SET blackjack_losses = blackjack_losses + 1 WHERE id = $1", userID)
+		if _, err := db.Exec("UPDATE users SET blackjack_losses = blackjack_losses + 1 WHERE id = $1", userID); err != nil {
+			log.Printf("Failed to update blackjack loss: %v", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	if _, err := w.Write(body); err != nil {
+		log.Printf("Failed to write blackjack stand response: %v", err)
+	}
 }
 
 func proxyBlackjack(path string) http.HandlerFunc {
@@ -369,7 +396,9 @@ func proxyBlackjack(path string) http.HandlerFunc {
 		}
 		defer resp.Body.Close()
 		w.Header().Set("Content-Type", "application/json")
-		io.Copy(w, resp.Body)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			log.Printf("Failed to copy blackjack proxy response: %v", err)
+		}
 	}
 }
 
@@ -378,7 +407,10 @@ func handlePokerStart(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := io.ReadAll(r.Body)
 	var req map[string]interface{}
-	json.Unmarshal(body, &req)
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	bet, _ := req["bet"].(float64)
 	if bet <= 0 {
@@ -401,7 +433,9 @@ func handlePokerStart(w http.ResponseWriter, r *http.Request) {
 
 	// Get user bankroll for poker API
 	var bankroll int64
-	db.QueryRow("SELECT bankroll_cents FROM users WHERE id = $1", userID).Scan(&bankroll)
+	if err := db.QueryRow("SELECT bankroll_cents FROM users WHERE id = $1", userID).Scan(&bankroll); err != nil {
+		log.Printf("Failed to get bankroll for poker: %v", err)
+	}
 
 	// Build poker start request
 	pokerReq := map[string]interface{}{
@@ -414,13 +448,17 @@ func handlePokerStart(w http.ResponseWriter, r *http.Request) {
 	apiURL := getPokerURL() + "/texas/single/start"
 	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(reqBody)))
 	if err != nil {
-		db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", betInt, userID)
+		if _, execErr := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", betInt, userID); execErr != nil {
+			log.Printf("Failed to refund poker bet: %v", execErr)
+		}
 		http.Error(w, "Game API error", http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
-	io.Copy(w, resp.Body)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		log.Printf("Failed to copy poker start response: %v", err)
+	}
 }
 
 func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
@@ -436,7 +474,9 @@ func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := io.ReadAll(resp.Body)
 	var state map[string]interface{}
-	json.Unmarshal(body, &state)
+	if err := json.Unmarshal(body, &state); err != nil {
+		log.Printf("Failed to unmarshal poker showdown response: %v", err)
+	}
 
 	// Check winner
 	winners, _ := state["winners"].([]interface{})
@@ -452,13 +492,19 @@ func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if playerWon {
-		db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1, poker_wins = poker_wins + 1 WHERE id = $2", potCents, userID)
+		if _, err := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1, poker_wins = poker_wins + 1 WHERE id = $2", potCents, userID); err != nil {
+			log.Printf("Failed to update poker win: %v", err)
+		}
 	} else {
-		db.Exec("UPDATE users SET poker_losses = poker_losses + 1 WHERE id = $1", userID)
+		if _, err := db.Exec("UPDATE users SET poker_losses = poker_losses + 1 WHERE id = $1", userID); err != nil {
+			log.Printf("Failed to update poker loss: %v", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	if _, err := w.Write(body); err != nil {
+		log.Printf("Failed to write poker showdown response: %v", err)
+	}
 }
 
 func proxyPoker(path string) http.HandlerFunc {
@@ -478,7 +524,9 @@ func proxyPoker(path string) http.HandlerFunc {
 		}
 		defer resp.Body.Close()
 		w.Header().Set("Content-Type", "application/json")
-		io.Copy(w, resp.Body)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			log.Printf("Failed to copy poker proxy response: %v", err)
+		}
 	}
 }
 
@@ -542,7 +590,9 @@ func handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/game", http.StatusFound)
 		return
 	}
-	templates.ExecuteTemplate(w, "login.html", PageData{})
+	if err := templates.ExecuteTemplate(w, "login.html", PageData{}); err != nil {
+		log.Printf("Failed to render login page: %v", err)
+	}
 }
 
 func handleLoginForm(w http.ResponseWriter, r *http.Request) {
@@ -557,11 +607,15 @@ func handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	`, email).Scan(&user.ID, &user.Email, &hash, &user.FirstName, &user.LastName, &user.BankrollCents,
 		&user.BlackjackWins, &user.BlackjackLosses, &user.PokerWins, &user.PokerLosses)
 	if err != nil {
-		templates.ExecuteTemplate(w, "login.html", PageData{Error: "Invalid email or password"})
+		if tmplErr := templates.ExecuteTemplate(w, "login.html", PageData{Error: "Invalid email or password"}); tmplErr != nil {
+			log.Printf("Failed to render login page: %v", tmplErr)
+		}
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
-		templates.ExecuteTemplate(w, "login.html", PageData{Error: "Invalid email or password"})
+		if tmplErr := templates.ExecuteTemplate(w, "login.html", PageData{Error: "Invalid email or password"}); tmplErr != nil {
+			log.Printf("Failed to render login page: %v", tmplErr)
+		}
 		return
 	}
 	setSessionCookie(w, user.ID)
@@ -574,7 +628,9 @@ func handleRegisterPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/game", http.StatusFound)
 		return
 	}
-	templates.ExecuteTemplate(w, "register.html", PageData{})
+	if err := templates.ExecuteTemplate(w, "register.html", PageData{}); err != nil {
+		log.Printf("Failed to render register page: %v", err)
+	}
 }
 
 func handleRegisterForm(w http.ResponseWriter, r *http.Request) {
@@ -584,13 +640,17 @@ func handleRegisterForm(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	if email == "" || password == "" || firstName == "" || lastName == "" {
-		templates.ExecuteTemplate(w, "register.html", PageData{Error: "All fields are required"})
+		if tmplErr := templates.ExecuteTemplate(w, "register.html", PageData{Error: "All fields are required"}); tmplErr != nil {
+			log.Printf("Failed to render register page: %v", tmplErr)
+		}
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		templates.ExecuteTemplate(w, "register.html", PageData{Error: "Server error"})
+		if tmplErr := templates.ExecuteTemplate(w, "register.html", PageData{Error: "Server error"}); tmplErr != nil {
+			log.Printf("Failed to render register page: %v", tmplErr)
+		}
 		return
 	}
 
@@ -605,10 +665,14 @@ func handleRegisterForm(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "unique") {
-			templates.ExecuteTemplate(w, "register.html", PageData{Error: "Email already exists"})
+			if tmplErr := templates.ExecuteTemplate(w, "register.html", PageData{Error: "Email already exists"}); tmplErr != nil {
+				log.Printf("Failed to render register page: %v", tmplErr)
+			}
 			return
 		}
-		templates.ExecuteTemplate(w, "register.html", PageData{Error: "Server error"})
+		if tmplErr := templates.ExecuteTemplate(w, "register.html", PageData{Error: "Server error"}); tmplErr != nil {
+			log.Printf("Failed to render register page: %v", tmplErr)
+		}
 		return
 	}
 	setSessionCookie(w, user.ID)
@@ -622,10 +686,12 @@ func handleGamePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bankroll := float64(user.BankrollCents) / 100
-	templates.ExecuteTemplate(w, "game.html", PageData{
+	if err := templates.ExecuteTemplate(w, "game.html", PageData{
 		FirstName: user.FirstName,
 		Bankroll:  formatMoney(bankroll),
-	})
+	}); err != nil {
+		log.Printf("Failed to render game page: %v", err)
+	}
 }
 
 func handleLogoutPage(w http.ResponseWriter, r *http.Request) {
