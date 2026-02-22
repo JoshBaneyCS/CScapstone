@@ -74,8 +74,8 @@ spec:
     limits.cpu: "8"                     # Total CPU limits
     
     # Memory limits
-    requests.memory: "4Gi"              # Total memory requests
-    limits.memory: "8Gi"                # Total memory limits
+    requests.memory: "8Gi"              # Total memory requests
+    limits.memory: "16Gi"               # Total memory limits
     
     # Storage limits (no in-cluster database)
     requests.storage: "10Gi"
