@@ -123,7 +123,7 @@ spec:
         memory: "4Gi"
       # Minimum allowed
       min:
-        cpu: "50m"                      # 0.05 CPU cores min
+        cpu: "10m"                      # 0.01 CPU cores min
         memory: "64Mi"                  # 64 MB RAM min
     
     # Limits for PVCs
