@@ -12,7 +12,7 @@ CARD_SIZE = (CARD_WIDTH, CARD_HEIGHT)
 FLIP_SIZE_DELTA = 8  # How many pixels the card shrinks/grows per frame during a flip
 FLIP_X_DELTA = 4     # How much the x-position shifts to keep the shrinking card centered
 CARD_MOVE_SPEED = 1
-MOVE_DURATION = 2.0  # Time in seconds for a card to complete its travel
+MOVE_DURATION = 0.5  # Time in seconds for a card to complete its travel
 
 class Card:
     """
@@ -32,6 +32,7 @@ class Card:
         """
         self.front_surface: pygame.Surface = None
         self.back_surface: pygame.Surface = None
+        self.value = 0
 
         # State management for animations
         self.flipping, self.flipped, self.front_showing = False, False, False

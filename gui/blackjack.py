@@ -76,6 +76,11 @@ BLACKJACK_PLAYER_LOCATION = (900, 650)
 BLACKJACK_DEALER_LOCATION = (900, 270)
 BLACKJACK_CARD_HELD_OFFSET = 50 # Horizontal gap between cards in hand
 
+BLACKJACK_BALANCE_LABEL_SIZE = (250, 55)
+BLACKJACK_BALANCE_LABEL_LOCATION = (50, 50)
+BLACKJACK_RESULT_LABEL_SIZE = (400, 60)
+BLACKJACK_STARTING_BALANCE = 2500
+
 class BlackjackScene(Scene):
     """
     Handles the logic and UI for the Blackjack game mode.
@@ -95,6 +100,7 @@ class BlackjackScene(Scene):
         self.game_state = BlackjackGameState.SETUP
         self.bet_amount = WHITE_CHIP_WORTH
         self.player_cards = []
+        self.dealer_cards = []
         self.blackjack_cards = []
 
         # Navigation
@@ -241,7 +247,33 @@ class BlackjackScene(Scene):
             container=self.scene_container,
             object_id="@blackjack_score")
 
+        self.balance = BLACKJACK_STARTING_BALANCE
+        self.balance_label = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(
+                BLACKJACK_BALANCE_LABEL_LOCATION,
+                BLACKJACK_BALANCE_LABEL_SIZE),
+            text=f"${self.balance:.2f}",
+            manager=self.ui_manager,
+            container=self.scene_container,
+            object_id="#bet_amount")
+        self.result_label = pygame_gui.elements.UILabel(
+            relative_rect=pygame.Rect(
+                (self.center_x(BLACKJACK_RESULT_LABEL_SIZE[0]), 500),
+                BLACKJACK_RESULT_LABEL_SIZE),
+            text="",
+            manager=self.ui_manager,
+            container=self.scene_container,
+            object_id="#bet_amount")
+
         self.reset_board()
+
+    def open_scene(self):
+        super().open_scene()
+        self.reset_board()
+        self.game_state = BlackjackGameState.SETUP
+        self.result_label.hide()
+        self.bet_amount = WHITE_CHIP_WORTH
+        self.bet_label.set_text("$" + str(self.bet_amount))
 
     def handle_events(self):
         """
@@ -277,7 +309,7 @@ class BlackjackScene(Scene):
                         self.game_state = BlackjackGameState.START_DEAL
                     case self.reset_button:
                         self.bet_amount = WHITE_CHIP_WORTH
-                        self.bet_label = "$" + str(self.bet_amount)
+                        self.bet_label.set_text("$" + str(self.bet_amount))
                     case self.hit_button:
                         self.game_state = BlackjackGameState.GIVE_PLAYER_CARD
                     case self.stand_button:
@@ -383,6 +415,7 @@ class BlackjackScene(Scene):
 
         self.player_score.set_text("0")
         self.dealer_score.set_text("0")
+        self.result_label.hide()
 
     def deal_blackjack(self):
         """
@@ -402,8 +435,13 @@ class BlackjackScene(Scene):
             response = requests.post('http://blackjack-api:8000/blackjack/start', data=json.dumps(payload))
             data = response.json()
         except requests.exceptions.RequestException as e:
+            self.balance += self.bet_amount
+            self.balance_label.set_text(f"${self.balance:.2f}")
             print(f"API Error: {e}")
             return
+
+        self.balance -= self.bet_amount
+        self.balance_label.set_text(f"${self.balance:.2f}")
 
         # Setup Player Cards
         self.player_cards[0].set_front(data["player_hand"][0])
@@ -412,11 +450,12 @@ class BlackjackScene(Scene):
         self.player_cards[1].target_location = pygame.Vector2(
             BLACKJACK_PLAYER_LOCATION[0] + 50, BLACKJACK_PLAYER_LOCATION[1])
 
-        # Setup Dealer Cards
         self.player_cards[0].moving = True
         self.player_cards[1].moving = True
         self.player_cards[0].move_then_flip = True
         self.player_cards[1].move_then_flip = True
+
+        # Setup Dealer Cards
         self.dealer_cards[0].set_front(data["dealer_hand"][0])
         self.dealer_cards[1].set_front(data["dealer_hand"][1])
         self.dealer_cards[0].target_location = pygame.Vector2(BLACKJACK_DEALER_LOCATION)
@@ -433,9 +472,35 @@ class BlackjackScene(Scene):
         self.dealer_cards[1].move_then_flip = True # Dealer's 'hole' card usually stays face down
 
         self.player_score.set_text(str(data["player_total"]))
-        self.dealer_score.set_text(str(data["dealer_total"]))
+
+        card_string = data["dealer_hand"][1]
+        card_value = card_string[0]
+        self.dealer_score.set_text(str(self.get_card_value(card_value)))
+        ##self.dealer_score.set_text(str(data["dealer_total"]))
 
         self.check_for_blackjack()
+
+    def get_card_value(self, card_id):
+        """
+        Returns the integer value of a card based on its identifier string.
+        """
+        # Map face cards and Aces to their values
+        values = {
+            "A": 11,
+            "J": 10,
+            "Q": 10,
+            "K": 10
+        }
+
+        # Check if the identifier is in the map (A, J, Q, K)
+        if card_id in values:
+            return values[card_id]
+
+        # Otherwise, assume it's a numeric string ("2"-"10")
+        try:
+            return int(card_id)
+        except ValueError:
+            return 0  # Or handle invalid inputs as needed
 
     def check_for_blackjack(self):
         """Checks the API for immediate win conditions (Naturals) after the deal."""
@@ -443,9 +508,9 @@ class BlackjackScene(Scene):
         data = response.json()
         match data["status"]:
             case "dealer_win":
-                self.end_game_early()
+                self.finish_hand(data["status"])
             case "player_win":
-                self.end_game_early()
+                self.finish_hand(data["status"])
             case _:
                 self.game_state = BlackjackGameState.DEALING
 
@@ -485,9 +550,9 @@ class BlackjackScene(Scene):
         match data["status"]:
             ## TODO: add game over animations to game_over gs
             case "player_bust":
-                self.end_game_early()
+                self.finish_hand(data["status"])
             case "player_win":
-                self.end_game_early()
+                self.finish_hand(data["status"])
             case "in_progress":
                 self.hit_button.enable()
                 self.stand_button.enable()
@@ -505,13 +570,16 @@ class BlackjackScene(Scene):
 
         # Tell the API the player is done so it can process the dealer's hand.
         try:
-            requests.post('http://blackjack-api:8000/blackjack/stand')
+            response = requests.post('http://blackjack-api:8000/blackjack/stand')
+            data = response.json
         except requests.exceptions.RequestException as e:
             print(f"Stand API Error: {e}")
 
         # Reveal the first dealer card (the one typically dealt face-down)
         self.dealer_cards[0].flipping = True
         self.game_state = BlackjackGameState.WAITING_DEALER_CARD
+        self.dealer_cards[1].flipping = True
+        self.dealer_score.set_text(str(data["dealer_total"]))
 
     def dealer_turn(self):
         """
@@ -521,12 +589,16 @@ class BlackjackScene(Scene):
         local table is missing cards, it adds them one by one to create
         a natural dealing sequence.
         """
+        if not self.dealer_cards[1].flipped:
+            self.dealer_cards[1].flipping = True
+
         try:
             response = requests.get('http://blackjack-api:8000/blackjack/state')
             data = response.json()
         except requests.exceptions.RequestException as e:
             print(f"State API Error: {e}")
             return
+
 
         # Check if the dealer hand on the API is larger than what we see on screen.
         if len(self.dealer_cards) < len(data["dealer_hand"]):
@@ -552,21 +624,32 @@ class BlackjackScene(Scene):
             self.game_state = BlackjackGameState.WAITING_DEALER_CARD
         else:
             # Table hand matches API hand; the round is visually complete.
-            # TODO: Transition to a GAME_OVER state to display "You Win/Lose" before resetting.
-            self.end_game_early()
+            self.finish_hand(data["status"])
 
-    def end_game_early(self):
-        """
-        Handles immediate game conclusions (e.g., Natural Blackjacks or initial Busts).
+    def finish_hand(self, status):
+        if status in ("player_win", "dealer_bust"):
+            self.balance += self.bet_amount * 2
+        elif status == "push":
+            self.balance += self.bet_amount
+        self.balance_label.set_text(f"${self.balance:.2f}")
 
-        Resets UI buttons to allow the player to start a new round.
-        """
+        result_text = {
+            "player_win": "You Win!",
+            "dealer_bust": "You Win!",
+            "dealer_win": "Dealer Wins",
+            "player_bust": "Bust!",
+            "push": "Push",
+        }.get(status, "Game Over")
+        self.result_label.set_text(result_text)
+        self.result_label.show()
+
         self.hit_button.disable()
         self.stand_button.disable()
-
-        # Return control to the player for the next round setup
         self.deal_button.enable()
         self.reset_button.enable()
-        self.chip_container.enable()
-
+        self.white_chip.enable()
+        self.red_chip.enable()
+        self.green_chip.enable()
+        self.blue_chip.enable()
+        self.black_chip.enable()
         self.game_state = BlackjackGameState.PRE_DEAL
