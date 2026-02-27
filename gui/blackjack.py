@@ -1,12 +1,12 @@
 # ----- Imports -----
 from enum import Enum
-import requests
 import json
 
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
 
+from api_client import api_get, api_post
 from card import Card
 from scene import (Scene, SceneID, WHITE_CHIP_WORTH, RED_CHIP_WORTH, GREEN_CHIP_WORTH,
                    BLUE_CHIP_WORTH, BLACK_CHIP_WORTH, MENU_BUTTON_TEXT, MENU_BUTTON_LOCATION,
@@ -429,12 +429,11 @@ class BlackjackScene(Scene):
         self.reset_button.disable()
         self.chip_container.disable()
 
-        # Communication with the local blackjack-api service
+        # Communication with the blackjack API
         payload = {'bet': str(self.bet_amount)}
         try:
-            response = requests.post('http://blackjack-api:8000/blackjack/start', data=json.dumps(payload))
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_post('/blackjack/start', payload)
+        except Exception as e:
             self.balance += self.bet_amount
             self.balance_label.set_text(f"${self.balance:.2f}")
             print(f"API Error: {e}")
@@ -504,8 +503,7 @@ class BlackjackScene(Scene):
 
     def check_for_blackjack(self):
         """Checks the API for immediate win conditions (Naturals) after the deal."""
-        response = requests.get('http://blackjack-api:8000/blackjack/state')
-        data = response.json()
+        data = api_get('/blackjack/state')
         match data["status"]:
             case "dealer_win":
                 self.finish_hand(data["status"])
@@ -524,8 +522,7 @@ class BlackjackScene(Scene):
         self.hit_button.disable()
         self.stand_button.disable()
 
-        response = requests.post('http://blackjack-api:8000/blackjack/hit')
-        data = response.json()
+        data = api_post('/blackjack/hit')
 
         new_card = Card(self, BLACKJACK_CARD_START_LOCATION)
         self.player_cards.append(new_card)
@@ -545,8 +542,7 @@ class BlackjackScene(Scene):
 
     def resolve_hit(self):
         """Checks if the player has busted or won after receiving a 'Hit' card."""
-        response = requests.get('http://blackjack-api:8000/blackjack/state')
-        data = response.json()
+        data = api_get('/blackjack/state')
         match data["status"]:
             ## TODO: add game over animations to game_over gs
             case "player_bust":
@@ -570,10 +566,12 @@ class BlackjackScene(Scene):
 
         # Tell the API the player is done so it can process the dealer's hand.
         try:
-            response = requests.post('http://blackjack-api:8000/blackjack/stand')
-            data = response.json
-        except requests.exceptions.RequestException as e:
+            data = api_post('/blackjack/stand')
+        except Exception as e:
             print(f"Stand API Error: {e}")
+            self.hit_button.enable()
+            self.stand_button.enable()
+            return
 
         # Reveal the first dealer card (the one typically dealt face-down)
         self.dealer_cards[0].flipping = True
@@ -593,9 +591,8 @@ class BlackjackScene(Scene):
             self.dealer_cards[1].flipping = True
 
         try:
-            response = requests.get('http://blackjack-api:8000/blackjack/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/blackjack/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 

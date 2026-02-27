@@ -1,0 +1,258 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* Auth pages */
+.auth-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.auth-container h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  color: #e94560;
+}
+
+.auth-container h2 {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  color: #888;
+}
+
+.auth-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-form input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #16213e;
+  color: #eee;
+  font-size: 1rem;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary {
+  background: #e94560;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #c73a52;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: #e94560;
+  border: 1px solid #e94560;
+}
+
+.btn-secondary:hover {
+  background: rgba(233, 69, 96, 0.1);
+}
+
+.error-msg {
+  color: #e94560;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.link-text {
+  color: #888;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.link-text a {
+  color: #e94560;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Lobby */
+.lobby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+  background: url('/green_background.jpg') center/cover no-repeat;
+  position: relative;
+}
+
+.lobby::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 20, 10, 0.6) 100%);
+  pointer-events: none;
+}
+
+.lobby > * {
+  position: relative;
+  z-index: 1;
+}
+
+.lobby-title {
+  font-family: 'Limelight', cursive;
+  font-size: 5rem;
+  background: linear-gradient(135deg, #FF8C00, #FFD700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 1rem;
+  text-align: center;
+  text-shadow: none;
+  filter: drop-shadow(2px 4px 6px rgba(0, 0, 0, 0.4));
+}
+
+.lobby-user-info {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  color: #FFECD1;
+  font-size: 1.1rem;
+}
+
+.lobby-user-info .bankroll {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #FFD700;
+}
+
+.lobby-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.lobby-btn {
+  width: 200px;
+  padding: 0.75rem 2rem;
+  border: none;
+  border-radius: 20px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  background: linear-gradient(135deg, #FF8C00, #FFD700);
+  color: #000;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+.lobby-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255, 140, 0, 0.4);
+}
+
+.lobby-btn.logout {
+  background: transparent;
+  border: 1px solid rgba(255, 236, 209, 0.4);
+  color: #FFECD1;
+  font-weight: normal;
+  font-size: 0.95rem;
+  width: 140px;
+  margin-top: 1rem;
+}
+
+.lobby-btn.logout:hover {
+  background: rgba(255, 236, 209, 0.1);
+  box-shadow: none;
+}
+
+/* Game page */
+.game-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100vh;
+}
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: #16213e;
+}
+
+.game-canvas-container {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f3460;
+}
+
+.game-canvas-container iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #888;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #333;
+  border-top-color: #e94560;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

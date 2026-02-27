@@ -25,6 +25,7 @@ on:
 
 env:
   GO_VERSION: '1.21'
+  PYTHON_VERSION: '3.11'
 
 jobs:
   backend-ci:
@@ -72,6 +73,52 @@ jobs:
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o casino-api .
 
+  blackjack-api-ci:
+    name: Blackjack API Tests (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./blackjack-api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r ../dev-testing/blackjack-api/requirements.txt
+
+      - name: Run tests
+        run: |
+          python -m pytest test_main.py -v
+
+  poker-api-ci:
+    name: Poker API Tests (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r ../dev-testing/poker-api/requirements.txt
+
+      - name: Run tests
+        run: |
+          python -m pytest test_main.py -v
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -99,10 +146,12 @@ jobs:
   docker-build-test:
     name: Docker Build Test
     runs-on: ubuntu-latest
-    needs: [backend-ci]
+    needs: [backend-ci, blackjack-api-ci, poker-api-ci]
     if: |
       always() &&
-      needs.backend-ci.result == 'success'
+      needs.backend-ci.result == 'success' &&
+      needs.blackjack-api-ci.result == 'success' &&
+      needs.poker-api-ci.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

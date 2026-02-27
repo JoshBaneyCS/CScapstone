@@ -1,15 +1,82 @@
 """Texas Hold'em Poker API using FastAPI."""
 
+import asyncio
 import random
+import threading
+import time
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, PrivateAttr
-
-app = FastAPI(title="Texas Hold'em API")
 
 # ruff: noqa: PLR2004, PLW0603, SLF001
 
 # python -m uvicorn apps.main:app --reload
+
+
+# ----- Session Management -----
+SESSIONS: dict[str, dict] = {}  # user_id -> {"game": GameState, "deck": list, "last_active": float}
+SESSION_TTL_SECONDS = 3600
+_session_lock = threading.Lock()
+
+
+def _activate_session(user_id: str) -> None:
+    """Swap the user's game state into the global TEXAS_GAME."""
+    global TEXAS_GAME
+    with _session_lock:
+        session = SESSIONS.get(user_id)
+        if session is None:
+            raise HTTPException(status_code=400, detail="No active round. Call /texas/single/start first.")
+        session["last_active"] = time.time()
+        TEXAS_GAME = session["game"]
+        TEXAS_GAME._deck = session["deck"]
+
+
+def _save_session(user_id: str) -> None:
+    """Save the current TEXAS_GAME state back to the user's session."""
+    with _session_lock:
+        if TEXAS_GAME is not None:
+            SESSIONS[user_id] = {
+                "game": TEXAS_GAME,
+                "deck": TEXAS_GAME._deck,
+                "last_active": time.time(),
+            }
+
+
+def _create_session(user_id: str) -> None:
+    """Create a new session for the current TEXAS_GAME."""
+    with _session_lock:
+        if TEXAS_GAME is not None:
+            SESSIONS[user_id] = {
+                "game": TEXAS_GAME,
+                "deck": TEXAS_GAME._deck,
+                "last_active": time.time(),
+            }
+
+
+def _cleanup_sessions() -> None:
+    """Remove expired sessions."""
+    now = time.time()
+    with _session_lock:
+        expired = [uid for uid, s in SESSIONS.items() if now - s["last_active"] > SESSION_TTL_SECONDS]
+        for uid in expired:
+            del SESSIONS[uid]
+
+
+async def _session_cleanup_loop() -> None:
+    while True:
+        _cleanup_sessions()
+        await asyncio.sleep(300)
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    task = asyncio.create_task(_session_cleanup_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Texas Hold'em API", lifespan=lifespan)
 
 
 # ----- Models -----
@@ -665,7 +732,7 @@ def root() -> dict[str, str]:
 
 
 @app.post("/texas/single/start")
-def single_start(req: SingleStartRequest) -> GameState:
+def single_start(req: SingleStartRequest, x_user_id: str = Header(...)) -> GameState:
     """Start a new single-player Texas Hold'em game."""
     global TEXAS_GAME
     if req.bet <= 0:
@@ -743,13 +810,15 @@ def single_start(req: SingleStartRequest) -> GameState:
             if amount > 0:
                 _post_bet(cpu_name, amount)
     TEXAS_GAME.to_act = "player"  # ensure player gets first action after blinds
+    _create_session(x_user_id)
 
     return state()
 
 
 @app.post("/texas/single/action")
-def single_action(req: ActionRequest) -> GameState:
+def single_action(req: ActionRequest, x_user_id: str = Header(...)) -> GameState:
     """Player action: stay (check/call), raise, or fold."""
+    _activate_session(x_user_id)
     s = _ensure_single()
     if s.to_act != "player":
         raise HTTPException(status_code=400, detail="Not player's turn.")
@@ -766,6 +835,7 @@ def single_action(req: ActionRequest) -> GameState:
 
     if action == "fold":
         _finish_on_fold("Player")
+        _save_session(x_user_id)
         return state()
 
     if action == "stay":
@@ -780,6 +850,7 @@ def single_action(req: ActionRequest) -> GameState:
     _cpu_take_turns()
     if s.status != "finished" and s.to_act == "player" and _round_settled():
         _maybe_progress_round()
+    _save_session(x_user_id)
     return state()
 
 
@@ -795,8 +866,9 @@ def _deal_community(n: int) -> None:
 
 
 @app.post("/texas/flop")
-def flop() -> GameState:
+def flop(x_user_id: str = Header(...)) -> GameState:
     """Deal the flop (3 community cards)."""
+    _activate_session(x_user_id)
     if TEXAS_GAME is None:
         raise HTTPException(
             status_code=400,
@@ -809,12 +881,14 @@ def flop() -> GameState:
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(3)
     TEXAS_GAME.status = "flop"
+    _save_session(x_user_id)
     return state()
 
 
 @app.post("/texas/turn")
-def turn() -> GameState:
+def turn(x_user_id: str = Header(...)) -> GameState:
     """Deal the turn (1 community card)."""
+    _activate_session(x_user_id)
     if TEXAS_GAME is None:
         raise HTTPException(
             status_code=400,
@@ -827,12 +901,14 @@ def turn() -> GameState:
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(1)
     TEXAS_GAME.status = "turn"
+    _save_session(x_user_id)
     return state()
 
 
 @app.post("/texas/river")
-def river() -> GameState:
+def river(x_user_id: str = Header(...)) -> GameState:
     """Deal the river (1 community card)."""
+    _activate_session(x_user_id)
     if TEXAS_GAME is None:
         raise HTTPException(
             status_code=400,
@@ -845,12 +921,14 @@ def river() -> GameState:
         raise HTTPException(status_code=400, detail="Not all players have settled their bets.")
     _deal_community(1)
     TEXAS_GAME.status = "river"
+    _save_session(x_user_id)
     return state()
 
 
 @app.post("/texas/showdown")
-def showdown() -> GameState:
+def showdown(x_user_id: str = Header(...)) -> GameState:
     """Evaluate hands and determine winner(s)."""
+    _activate_session(x_user_id)
     if TEXAS_GAME is None:
         raise HTTPException(
             status_code=400,
@@ -891,10 +969,12 @@ def showdown() -> GameState:
             remainder = pot % len(best_players)
             for i, p in enumerate(best_players):
                 TEXAS_GAME.player_stacks[p] += split + (1 if i < remainder else 0)
+    _save_session(x_user_id)
     return state()
 
 
 @app.get("/texas/state")
-def get_state() -> GameState:
+def get_state(x_user_id: str = Header(...)) -> GameState:
     """Get current game state."""
+    _activate_session(x_user_id)
     return state()

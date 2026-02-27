@@ -90,22 +90,21 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  gui:
-    container_name: dev-gui
+  frontend:
+    container_name: dev-frontend
     build:
-      context: ..
-      dockerfile: dev-testing/gui/Dockerfile
+      context: ../frontend
+      dockerfile: Dockerfile.dev
     ports:
-      - "6080:6080"
+      - "3000:3000"
     volumes:
-      - ../gui:/app:ro
-    environment:
-      - DISPLAY=:99
+      - ../frontend/src:/app/src:ro
+      - ../frontend/index.html:/app/index.html:ro
+      - ../frontend/public:/app/public:ro
     networks:
       - dev-testing-network
     depends_on:
-      - blackjack-api
-      - poker-api
+      - backend
     restart: unless-stopped
 
   nginx:
@@ -119,7 +118,7 @@ services:
       - dev-testing-network
     depends_on:
       - backend
-      - gui
+      - frontend
     restart: unless-stopped
 
 networks:

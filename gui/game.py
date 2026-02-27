@@ -78,18 +78,29 @@ class Game:
 
     def game_loop(self):
         """
-        The primary execution loop of the GUI.
+        The primary execution loop of the GUI (blocking).
 
         Coordinates the timing, event handling, logic updates, and
         rendering for the currently active scene.
         """
         while self.is_playing:
-            # Calculate time since last frame in seconds for smooth movement/animations.
-            self.time_delta = self.clock.tick(self.FRAMES_PER_SECOND) / 1000.0
+            self.game_loop_tick()
 
-            self.current_scene.handle_events()
-            self.current_scene.update(self.time_delta)
-            self.current_scene.draw_scene()
+    def game_loop_tick(self):
+        """
+        Process a single frame of the game loop.
+
+        This non-blocking method is used by the async main loop (pygbag)
+        so the browser event loop can yield between frames.
+        """
+        if not self.is_playing:
+            return
+        # Calculate time since last frame in seconds for smooth movement/animations.
+        self.time_delta = self.clock.tick(self.FRAMES_PER_SECOND) / 1000.0
+
+        self.current_scene.handle_events()
+        self.current_scene.update(self.time_delta)
+        self.current_scene.draw_scene()
 
     def change_scene(self, scene_id):
         """

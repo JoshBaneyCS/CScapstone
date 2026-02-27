@@ -1,12 +1,12 @@
 # ----- Imports -----
 from enum import Enum
-import requests
 import json
 
 import pygame
 import pygame_gui
 from pygame_gui.core import ObjectID
 
+from api_client import api_get, api_post
 from card import Card
 from scene import (Scene, SceneID, WHITE_CHIP_WORTH, RED_CHIP_WORTH, GREEN_CHIP_WORTH,
                    BLUE_CHIP_WORTH, BLACK_CHIP_WORTH, MENU_BUTTON_TEXT, MENU_BUTTON_LOCATION,
@@ -42,7 +42,7 @@ class PokerGameState(Enum):
 
 # ----- Globals/Constants -----
 # API calls
-POKER_API_BASE = 'http://poker-api:8001/texas'
+POKER_API_BASE = '/texas'
 API_START = "single/start"
 API_BET = "bet"
 API_ACTION = "action"
@@ -359,17 +359,15 @@ class PokerScene(Scene):
                         self.game_state = PokerGameState.STARTING_HOLE
                     case self.stay_button:
                         try:
-                            response = requests.get('http://poker-api:8001/texas/state')
-                            data = response.json()
-                        except requests.exceptions.RequestException as e:
+                            data = api_get('/texas/state')
+                        except Exception as e:
                             print(f"State API Error: {e}")
                             return
 
                         payload = {"action":"stay"}
                         try:
-                            requests.post('http://poker-api:8001/texas/single/action',
-                                                     data=json.dumps(payload))
-                        except requests.exceptions.RequestException as e:
+                            api_post('/texas/single/action', payload)
+                        except Exception as e:
                             print(f"API Error: {e}")
                             return
 
@@ -388,10 +386,8 @@ class PokerScene(Scene):
                     case self.raise_button:
                         payload = {"action":"raise", "amount": self.bet_amount}
                         try:
-                            response = requests.post('http://poker-api:8001/texas/single/action',
-                                                     data=json.dumps(payload))
-                            data = response.json()
-                        except requests.exceptions.RequestException as e:
+                            data = api_post('/texas/single/action', payload)
+                        except Exception as e:
                             self.balance += self.bet_amount
                             self.balance_label.set_text(f"${self.balance:.2f}")
                             print(f"API Error: {e}")
@@ -411,10 +407,8 @@ class PokerScene(Scene):
                     case self.fold_button:
                         payload = {"action":"fold"}
                         try:
-                            response = requests.post('http://poker-api:8001/texas/single/action',
-                                                     data=json.dumps(payload))
-                            data = response.json()
-                        except requests.exceptions.RequestException as e:
+                            data = api_post('/texas/single/action', payload)
+                        except Exception as e:
                             print(f"API Error: {e}")
                             return
 
@@ -590,12 +584,11 @@ class PokerScene(Scene):
         self.deal_button.disable()
         self.reset_button.disable()
 
-        # Communication with the local poker-api service
+        # Communication with the poker API
         payload = {"bet": str(self.bet_amount)}
         try:
-            response = requests.post('http://poker-api:8001/texas/single/start', data=json.dumps(payload))
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_post('/texas/single/start', payload)
+        except Exception as e:
             self.balance += self.bet_amount
             self.balance_label.set_text(f"${self.balance:.2f}")
             print(f"API Error: {e}")
@@ -662,9 +655,8 @@ class PokerScene(Scene):
         self.reset_button.disable()
 
         try:
-            response = requests.get('http://poker-api:8001/texas/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/texas/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 
@@ -695,9 +687,8 @@ class PokerScene(Scene):
         self.reset_button.disable()
 
         try:
-            response = requests.get('http://poker-api:8001/texas/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/texas/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 
@@ -718,9 +709,8 @@ class PokerScene(Scene):
         self.reset_button.disable()
 
         try:
-            response = requests.get('http://poker-api:8001/texas/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/texas/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 
@@ -754,9 +744,8 @@ class PokerScene(Scene):
 
     def game_update(self):
         try:
-            response = requests.get('http://poker-api:8001/texas/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/texas/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 
@@ -800,9 +789,8 @@ class PokerScene(Scene):
 
     def check_reraise(self):
         try:
-            response = requests.get('http://poker-api:8001/texas/state')
-            data = response.json()
-        except requests.exceptions.RequestException as e:
+            data = api_get('/texas/state')
+        except Exception as e:
             print(f"State API Error: {e}")
             return
 

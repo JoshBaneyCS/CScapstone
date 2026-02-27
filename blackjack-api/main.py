@@ -1,9 +1,55 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import random
-from typing import List, Dict, Any, Optional
+import asyncio
+import time
+from contextlib import asynccontextmanager
+from typing import List, Dict, Any
 
-app = FastAPI(title="Blackjack API")
+import random
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+
+
+# ----- Session Management -----
+SESSIONS: Dict[str, Dict[str, Any]] = {}  # user_id -> {"game": {...}, "last_active": timestamp}
+SESSION_TTL_SECONDS = 3600  # 1 hour
+
+
+def get_game(user_id: str) -> Dict[str, Any]:
+    """Get the game state for a specific user."""
+    session = SESSIONS.get(user_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="No active round. Call /blackjack/start first.")
+    session["last_active"] = time.time()
+    return session["game"]
+
+
+def set_game(user_id: str, game: Dict[str, Any]) -> None:
+    """Store game state for a specific user."""
+    SESSIONS[user_id] = {"game": game, "last_active": time.time()}
+
+
+def cleanup_sessions():
+    """Remove expired sessions."""
+    now = time.time()
+    expired = [uid for uid, s in SESSIONS.items() if now - s["last_active"] > SESSION_TTL_SECONDS]
+    for uid in expired:
+        del SESSIONS[uid]
+
+
+async def session_cleanup_loop():
+    while True:
+        cleanup_sessions()
+        await asyncio.sleep(300)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(session_cleanup_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Blackjack API", lifespan=lifespan)
+
 
 # ----- Request/Response Models -----
 class StartRequest(BaseModel):
@@ -17,8 +63,6 @@ class GameState(BaseModel):
     bet: int
     status: str  # in_progress, player_bust, dealer_bust, player_win, dealer_win, push
 
-# ----- In-memory game state (1 game for now) -----
-GAME: Optional[Dict[str, Any]] = None
 
 # ----- Card helpers -----
 SUITS = ["S", "H", "D", "C"]
@@ -53,40 +97,40 @@ def hand_total(hand: List[str]) -> int:
         aces -= 1
     return total
 
-def state() -> GameState:
-    global GAME
-    if GAME is None:
-        raise HTTPException(status_code=400, detail="No active round. Call /blackjack/start first.")
-    p = GAME["player_hand"]
-    d = GAME["dealer_hand"]
+
+def make_state(game: Dict[str, Any]) -> GameState:
+    """Build a GameState response from a game dict."""
+    p = game["player_hand"]
+    d = game["dealer_hand"]
     return GameState(
         player_hand=p,
         dealer_hand=d,
         player_total=hand_total(p),
         dealer_total=hand_total(d),
-        bet=GAME["bet"],
-        status=GAME["status"]
+        bet=game["bet"],
+        status=game["status"]
     )
 
-def dealer_play():
-    """Dealer hits until 17+."""
-    global GAME
-    while hand_total(GAME["dealer_hand"]) < 17:
-        GAME["dealer_hand"].append(draw(GAME["deck"]))
 
-def resolve():
+def dealer_play(game: Dict[str, Any]):
+    """Dealer hits until 17+."""
+    while hand_total(game["dealer_hand"]) < 17:
+        game["dealer_hand"].append(draw(game["deck"]))
+
+
+def resolve(game: Dict[str, Any]):
     """Set final status if player hasn't busted."""
-    global GAME
-    p = hand_total(GAME["player_hand"])
-    d = hand_total(GAME["dealer_hand"])
+    p = hand_total(game["player_hand"])
+    d = hand_total(game["dealer_hand"])
     if d > 21:
-        GAME["status"] = "dealer_bust"
+        game["status"] = "dealer_bust"
     elif p > d:
-        GAME["status"] = "player_win"
+        game["status"] = "player_win"
     elif p < d:
-        GAME["status"] = "dealer_win"
+        game["status"] = "dealer_win"
     else:
-        GAME["status"] = "push"
+        game["status"] = "push"
+
 
 # ----- Endpoints -----
 @app.get("/")
@@ -94,8 +138,7 @@ def root():
     return {"message": "Blackjack API is running"}
 
 @app.post("/blackjack/start", response_model=GameState)
-def start(req: StartRequest):
-    global GAME
+def start(req: StartRequest, x_user_id: str = Header(...)):
     if req.bet <= 0:
         raise HTTPException(status_code=400, detail="Bet must be > 0")
 
@@ -103,7 +146,7 @@ def start(req: StartRequest):
     player = [draw(deck), draw(deck)]
     dealer = [draw(deck), draw(deck)]
 
-    GAME = {
+    game = {
         "deck": deck,
         "player_hand": player,
         "dealer_hand": dealer,
@@ -115,39 +158,39 @@ def start(req: StartRequest):
     p_total = hand_total(player)
     d_total = hand_total(dealer)
     if p_total == 21 and d_total == 21:
-        GAME["status"] = "push"
+        game["status"] = "push"
     elif p_total == 21:
-        GAME["status"] = "player_win"
+        game["status"] = "player_win"
     elif d_total == 21:
-        GAME["status"] = "dealer_win"
+        game["status"] = "dealer_win"
 
-    return state()
+    set_game(x_user_id, game)
+    return make_state(game)
 
 @app.post("/blackjack/hit", response_model=GameState)
-def hit():
-    global GAME
-    s = state()
-    if s.status != "in_progress":
-        raise HTTPException(status_code=400, detail=f"Round is not active: {s.status}")
+def hit(x_user_id: str = Header(...)):
+    game = get_game(x_user_id)
+    if game["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail=f"Round is not active: {game['status']}")
 
-    GAME["player_hand"].append(draw(GAME["deck"]))
+    game["player_hand"].append(draw(game["deck"]))
 
-    if hand_total(GAME["player_hand"]) > 21:
-        GAME["status"] = "player_bust"
+    if hand_total(game["player_hand"]) > 21:
+        game["status"] = "player_bust"
 
-    return state()
+    return make_state(game)
 
 @app.post("/blackjack/stand", response_model=GameState)
-def stand():
-    global GAME
-    s = state()
-    if s.status != "in_progress":
-        raise HTTPException(status_code=400, detail=f"Round is not active: {s.status}")
+def stand(x_user_id: str = Header(...)):
+    game = get_game(x_user_id)
+    if game["status"] != "in_progress":
+        raise HTTPException(status_code=400, detail=f"Round is not active: {game['status']}")
 
-    dealer_play()
-    resolve()
-    return state()
+    dealer_play(game)
+    resolve(game)
+    return make_state(game)
 
 @app.get("/blackjack/state", response_model=GameState)
-def get_state():
-    return state()
+def get_state(x_user_id: str = Header(...)):
+    game = get_game(x_user_id)
+    return make_state(game)

@@ -40,21 +40,9 @@ BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at();
 
--- Trigger function to delete user when bankroll hits zero
-CREATE OR REPLACE FUNCTION delete_user_on_zero_bankroll()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.bankroll_cents <= 0 THEN
-        DELETE FROM users WHERE id = NEW.id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
+-- Note: The CHECK constraint (bankroll_cents >= 0) already prevents negative balances.
+-- The application layer should check bankroll > 0 before allowing new bets.
 DROP TRIGGER IF EXISTS users_delete_on_zero_bankroll ON users;
-CREATE TRIGGER users_delete_on_zero_bankroll
-AFTER UPDATE OF bankroll_cents ON users
-FOR EACH ROW
-EXECUTE FUNCTION delete_user_on_zero_bankroll();
+DROP FUNCTION IF EXISTS delete_user_on_zero_bankroll();
 
 COMMIT;

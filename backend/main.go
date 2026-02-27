@@ -55,6 +55,7 @@ func main() {
 	var err error
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		log.Println("WARNING: DATABASE_URL not set, using default dev credentials. Do not use in production.")
 		dbURL = "postgres://casino_admin:casino_secret_password_123@localhost:5432/casino_db?sslmode=disable"
 	}
 	db, err = sql.Open("postgres", dbURL)
@@ -120,7 +121,7 @@ func main() {
 
 	// Blackjack proxy
 	api.HandleFunc("/blackjack/start", handleBlackjackStart).Methods("POST")
-	api.HandleFunc("/blackjack/hit", proxyBlackjack("/blackjack/hit")).Methods("POST")
+	api.HandleFunc("/blackjack/hit", handleBlackjackHit).Methods("POST")
 	api.HandleFunc("/blackjack/stand", handleBlackjackStand).Methods("POST")
 	api.HandleFunc("/blackjack/state", proxyBlackjack("/blackjack/state")).Methods("GET")
 
@@ -317,9 +318,17 @@ func handleBlackjackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Proxy to blackjack API
+	// Proxy to blackjack API with user ID
 	apiURL := getBlackjackURL() + "/blackjack/start"
-	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(body)))
+	apiReq, err := http.NewRequest("POST", apiURL, strings.NewReader(string(body)))
+	if err != nil {
+		http.Error(w, "Request creation error", http.StatusInternalServerError)
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("X-User-ID", userID)
+	client := &http.Client{}
+	resp, err := client.Do(apiReq)
 	if err != nil {
 		// Refund on error
 		if _, execErr := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", req.Bet, userID); execErr != nil {
@@ -338,9 +347,17 @@ func handleBlackjackStart(w http.ResponseWriter, r *http.Request) {
 func handleBlackjackStand(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 
-	// Proxy to blackjack API
+	// Proxy to blackjack API with user ID
 	apiURL := getBlackjackURL() + "/blackjack/stand"
-	resp, err := http.Post(apiURL, "application/json", nil)
+	apiReq, err := http.NewRequest("POST", apiURL, nil)
+	if err != nil {
+		http.Error(w, "Request creation error", http.StatusInternalServerError)
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("X-User-ID", userID)
+	client := &http.Client{}
+	resp, err := client.Do(apiReq)
 	if err != nil {
 		http.Error(w, "Game API error", http.StatusServiceUnavailable)
 		return
@@ -379,17 +396,68 @@ func handleBlackjackStand(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleBlackjackHit(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+
+	apiURL := getBlackjackURL() + "/blackjack/hit"
+	apiReq, err := http.NewRequest("POST", apiURL, nil)
+	if err != nil {
+		http.Error(w, "Request creation error", http.StatusInternalServerError)
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("X-User-ID", userID)
+	client := &http.Client{}
+	resp, err := client.Do(apiReq)
+	if err != nil {
+		http.Error(w, "Game API error", http.StatusServiceUnavailable)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var state map[string]interface{}
+	if err := json.Unmarshal(body, &state); err != nil {
+		log.Printf("Failed to unmarshal blackjack hit response: %v", err)
+	}
+
+	status, _ := state["status"].(string)
+	if status == "player_bust" {
+		if _, err := db.Exec("UPDATE users SET blackjack_losses = blackjack_losses + 1 WHERE id = $1", userID); err != nil {
+			log.Printf("Failed to update blackjack bust loss: %v", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(body); err != nil {
+		log.Printf("Failed to write blackjack hit response: %v", err)
+	}
+}
+
 func proxyBlackjack(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get("X-User-ID")
 		apiURL := getBlackjackURL() + path
-		var resp *http.Response
+		var apiReq *http.Request
 		var err error
 		if r.Method == "POST" {
 			body, _ := io.ReadAll(r.Body)
-			resp, err = http.Post(apiURL, "application/json", strings.NewReader(string(body)))
+			apiReq, err = http.NewRequest("POST", apiURL, strings.NewReader(string(body)))
+			if err != nil {
+				http.Error(w, "Request creation error", http.StatusInternalServerError)
+				return
+			}
+			apiReq.Header.Set("Content-Type", "application/json")
 		} else {
-			resp, err = http.Get(apiURL)
+			apiReq, err = http.NewRequest("GET", apiURL, nil)
+			if err != nil {
+				http.Error(w, "Request creation error", http.StatusInternalServerError)
+				return
+			}
 		}
+		apiReq.Header.Set("X-User-ID", userID)
+		client := &http.Client{}
+		resp, err := client.Do(apiReq)
 		if err != nil {
 			http.Error(w, "Game API error", http.StatusServiceUnavailable)
 			return
@@ -446,7 +514,15 @@ func handlePokerStart(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := json.Marshal(pokerReq)
 
 	apiURL := getPokerURL() + "/texas/single/start"
-	resp, err := http.Post(apiURL, "application/json", strings.NewReader(string(reqBody)))
+	apiReq, reqErr := http.NewRequest("POST", apiURL, strings.NewReader(string(reqBody)))
+	if reqErr != nil {
+		http.Error(w, "Request creation error", http.StatusInternalServerError)
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("X-User-ID", userID)
+	client := &http.Client{}
+	resp, err := client.Do(apiReq)
 	if err != nil {
 		if _, execErr := db.Exec("UPDATE users SET bankroll_cents = bankroll_cents + $1 WHERE id = $2", betInt, userID); execErr != nil {
 			log.Printf("Failed to refund poker bet: %v", execErr)
@@ -465,7 +541,15 @@ func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
 	userID := r.Header.Get("X-User-ID")
 
 	apiURL := getPokerURL() + "/texas/showdown"
-	resp, err := http.Post(apiURL, "application/json", nil)
+	apiReq, reqErr := http.NewRequest("POST", apiURL, nil)
+	if reqErr != nil {
+		http.Error(w, "Request creation error", http.StatusInternalServerError)
+		return
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	apiReq.Header.Set("X-User-ID", userID)
+	client := &http.Client{}
+	resp, err := client.Do(apiReq)
 	if err != nil {
 		http.Error(w, "Game API error", http.StatusServiceUnavailable)
 		return
@@ -485,7 +569,7 @@ func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
 
 	playerWon := false
 	for _, w := range winners {
-		if w == "player" {
+		if w == "Player" {
 			playerWon = true
 			break
 		}
@@ -509,15 +593,28 @@ func handlePokerShowdown(w http.ResponseWriter, r *http.Request) {
 
 func proxyPoker(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.Header.Get("X-User-ID")
 		apiURL := getPokerURL() + path
-		var resp *http.Response
+		var apiReq *http.Request
 		var err error
 		if r.Method == "POST" {
 			body, _ := io.ReadAll(r.Body)
-			resp, err = http.Post(apiURL, "application/json", strings.NewReader(string(body)))
+			apiReq, err = http.NewRequest("POST", apiURL, strings.NewReader(string(body)))
+			if err != nil {
+				http.Error(w, "Request creation error", http.StatusInternalServerError)
+				return
+			}
+			apiReq.Header.Set("Content-Type", "application/json")
 		} else {
-			resp, err = http.Get(apiURL)
+			apiReq, err = http.NewRequest("GET", apiURL, nil)
+			if err != nil {
+				http.Error(w, "Request creation error", http.StatusInternalServerError)
+				return
+			}
 		}
+		apiReq.Header.Set("X-User-ID", userID)
+		client := &http.Client{}
+		resp, err := client.Do(apiReq)
 		if err != nil {
 			http.Error(w, "Game API error", http.StatusServiceUnavailable)
 			return
