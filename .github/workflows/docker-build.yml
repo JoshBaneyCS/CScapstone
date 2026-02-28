@@ -23,7 +23,7 @@ env:
   IMAGE_BASE: ghcr.io/joshbaneycs
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -105,3 +105,21 @@ jobs:
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Update kustomize image tag
+        if: github.event_name == 'push'
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          BRANCH="${{ github.ref_name }}"
+          case "$BRANCH" in
+            main)    OVERLAY="prod" ;;
+            Staging) OVERLAY="staging" ;;
+            develop) OVERLAY="dev" ;;
+            *)       echo "Unknown branch, skipping tag update"; exit 0 ;;
+          esac
+          sed -i "s/newTag: .*/newTag: ${SHORT_SHA}/" infra/k8s/overlays/$OVERLAY/kustomization.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add infra/k8s/overlays/$OVERLAY/kustomization.yaml
+          git commit -m "ci: update $OVERLAY image tag to ${SHORT_SHA} [skip ci]"
+          git push

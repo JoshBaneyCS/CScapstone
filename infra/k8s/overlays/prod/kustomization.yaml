@@ -16,7 +16,7 @@ commonAnnotations:
 images:
   - name: capstone
     newName: ghcr.io/joshbaneycs/capstone-prod
-    newTag: latest
+    newTag: "2765066"
 
 configMapGenerator:
   - name: capstone-config
