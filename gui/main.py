@@ -1,4 +1,6 @@
 import asyncio
+import pygame
+import pygame_gui
 
 from game import Game
 
