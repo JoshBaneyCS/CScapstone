@@ -1,14 +1,27 @@
 import asyncio
+import sys
 import pygame
 import pygame_gui
 
-from game import Game
+try:
+    from game import Game
 
-# Initialize the main game GUI
-game = Game()
+    # Initialize the main game GUI
+    game = Game()
 
-# Set the initial state to begin the game loop.
-game.is_playing = True
+    # Set the initial state to begin the game loop.
+    game.is_playing = True
+    print("Game initialized successfully", flush=True)
+
+except Exception as e:
+    print(f"ERROR initializing game: {e}", flush=True)
+    import traceback
+    traceback.print_exc()
+    if sys.platform == "emscripten":
+        from platform import window
+        window.infobox.style.display = "block"
+        window.infobox.innerText = f"Error: {e}"
+    raise
 
 
 async def main():

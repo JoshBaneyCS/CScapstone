@@ -1,4 +1,5 @@
 # ----- Imports -----
+import sys
 import pygame
 import pygame_gui
 
@@ -6,6 +7,8 @@ from scene import SceneID
 from blackjack import BlackjackScene
 from game_menu import GameMenu
 from poker import PokerScene
+
+IS_WASM = sys.platform == "emscripten"
 
 # ----- Global Card Identifier Pieces  -----
 # These lists are used to programmatically generate file paths and dictionary keys.
@@ -40,13 +43,20 @@ class Game:
         pygame.init()
         pygame.display.set_caption(self.GAME_NAME)
 
-        # Detect system resolution to support dynamic fullscreen scaling.
-        display_info = pygame.display.Info()
-        self.screen_width = display_info.current_w
-        self.screen_height = display_info.current_h
-        screen_resolution = (self.screen_width, self.screen_height)
-
-        self.window = pygame.display.set_mode(screen_resolution, pygame.FULLSCREEN)
+        if IS_WASM:
+            # In WASM/browser, use the canvas size from pygbag config (1280x720).
+            # FULLSCREEN is not supported in the browser canvas.
+            self.screen_width = 1280
+            self.screen_height = 720
+            screen_resolution = (self.screen_width, self.screen_height)
+            self.window = pygame.display.set_mode(screen_resolution)
+        else:
+            # Native: detect system resolution and use fullscreen.
+            display_info = pygame.display.Info()
+            self.screen_width = display_info.current_w
+            self.screen_height = display_info.current_h
+            screen_resolution = (self.screen_width, self.screen_height)
+            self.window = pygame.display.set_mode(screen_resolution, pygame.FULLSCREEN)
         self.ui_manager = pygame_gui.UIManager(screen_resolution)
         self.time_delta = 0
 
