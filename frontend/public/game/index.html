@@ -140,9 +140,9 @@ config = {
     ume_block : 0,
     can_close : 0,
     archive : "gui",
-    gui_debug : 0,
+    gui_debug : 2,
     cdn : "https://pygame-web.github.io/cdn/0.9.3/",
-    autorun : 1,
+    autorun : 0,
     PYBUILD : "3.12",
     fb_ar   :  1.77,
     fb_width : "1280",
@@ -364,6 +364,15 @@ frameborder="1"
     globalThis.__canvas_resized = (self, ecw, ech) => {
         console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
     }
+
+    // Auto-satisfy UME for iframe embedding — user already clicked "Play" in parent SPA
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            if (window.MM) window.MM.UME = 1;
+            const c = document.getElementById('canvas');
+            if (c) c.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        }, 500);
+    });
 
     async function custom_onload(debug_hidden) {
         // this is called before anything python is loaded
