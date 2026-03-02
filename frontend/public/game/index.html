@@ -23,6 +23,7 @@ from pathlib import Path
 # do not rename
 async def custom_site():
     import embed
+    print(">>> custom_site: start", flush=True)
     platform.document.body.style.background = "#7f7f7f"
 
     platform.window.transfer.hidden = true
@@ -35,6 +36,7 @@ async def custom_site():
     appdir = Path(f"/data/data/{bundle}") # /data/data/gui
     appdir.mkdir()
 
+    print(">>> custom_site: downloading archive ...", flush=True)
 
     # unpack filesystem from compressed archive into work dir
     if platform.window.location.host.find('.itch.zone')>0:
@@ -49,21 +51,25 @@ async def custom_site():
             tar.extractall(path=appdir.as_posix(), filter='tar')
             tar.close()
 
+    print(">>> custom_site: archive extracted", flush=True)
+
     # preloader will change to work dir and prepend it to sys.path
     platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
 
+    print(">>> custom_site: run_main done, waiting for preload ...", flush=True)
 
     # wait preloading complete : that includes images and wasm compilation of bundled modules
     while embed.counter()<0:
         await asyncio.sleep(.1)
 
-    main = appdir / "assets" / "main.py"
+    print(">>> custom_site: preload complete", flush=True)
 
-    # TODO: test for window.webkitAudioContext and block aio loop until gesture if accessing media manager play
-    # before a gesture is recorded ( touch or click )
+    main = appdir / "assets" / "main.py"
 
     # Skip UME wait — game runs in an iframe, user already clicked to get here
     __import__(__name__).__file__ = main
+
+    print(">>> custom_site: starting toplevel ...", flush=True)
 
     # start async top level machinery if not started and add a console in any case if requested.
     await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
@@ -72,6 +78,7 @@ async def custom_site():
     # but we need to fill __file__/__name__ that are not yet set
     __import__(__name__).__file__ = main
 
+    print(">>> custom_site: sourcing main.py ...", flush=True)
 
     def ui_callback(pkg):
         platform.window.infobox.innerText = f"installing {pkg}"
@@ -81,10 +88,12 @@ async def custom_site():
     # if you don't reach that step
     # your main.py has an infinite sync loop somewhere !
 
+    print(">>> custom_site: main.py loaded, finalizing ...", flush=True)
+
     platform.window.infobox.style.display = "none"
     platform.window.config.gui_divider = 1
     platform.window.window_resize()
-    print("default.tmpl: done")
+    print(">>> custom_site: DONE", flush=True)
 
     shell.interactive()
 
@@ -138,11 +147,11 @@ config = {
     user_canvas_managed : 0,
     gui_divider : 2,
     ume_block : 0,
-    can_close : 0,
+    can_close : 1,
     archive : "gui",
     gui_debug : 2,
     cdn : "https://pygame-web.github.io/cdn/0.9.3/",
-    autorun : 0,
+    autorun : 1,
     PYBUILD : "3.12",
     fb_ar   :  1.77,
     fb_width : "1280",
